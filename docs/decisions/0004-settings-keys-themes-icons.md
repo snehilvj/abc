@@ -26,9 +26,21 @@ where a field declares one. Unknown keys are errors.
   parts. Each notices a changed file within a second; an invalid file keeps the
   last good settings and reports the error (status line, log).
 
-**Keys.** `[keys]` maps actions to key combinations such as `"ctrl-p"`, parsed
-and printed by [crokey](https://crates.io/crates/crokey). The key bar and the
-help overlay render from the same map. Conflicting bindings are a load error.
+**Keys.** Vim-style by default: `j`/`k` move, `h`/`l` move focus between
+panes, `gg`/`G`, `ctrl-d`/`ctrl-u`, `ctrl-f`/`ctrl-b`. Commands sit behind a
+`space` leader, Neovim style (`space f` find file, `space r a` add repository),
+with a which-key popup that lists what can follow after
+`keys.which_key.delay_ms` (default 300 ms). `ctrl-p`, `tab`, `?` and `q` stay
+direct.
+
+`[keys]` maps key sequences to actions (`"space r a" = "add_repo"`), with
+`[keys.<pane>]` tables for pane-specific keys and `[keys.groups]` naming the
+popup's groups. [crokey](https://crates.io/crates/crokey) parses and prints each
+key; the sequence matcher is our own small trie (prefix state, timeout, popup
+model), because the crates that offer leader sequences are pre-1.0 or a few
+months old. The key bar, the help overlay and the popup all render from the
+same map. A sequence that is both a binding and a prefix of another is a load
+error.
 
 **Themes.** `theme = "auto" | "dark" | "light" | "ansi" | "<name>"`, default
 `auto`, which asks the terminal for its background colour with
