@@ -23,13 +23,16 @@ in `docs/ui/tapes/<screen>.tape` → only then wire to real data.
 ## Hard rules
 
 - One small step per commit; `just check` passes after each.
-- The client never reads files or runs git; it asks abcd. Only `abc logs` reads a file.
+- The client never reads repos or runs git/gh; it asks abcd. It reads only its settings and `abc logs`.
+- Everything is configurable: new options go in the confique settings structs with docs and defaults.
 - Never change the `hello` message's shape. Bump `PROTOCOL` on any other wire change.
 - Crates: ratatui, crossterm, tokio, serde, serde_json, toml, anyhow, thiserror, clap,
   tracing(-subscriber, -appender), tree-sitter(-highlight, -rust, -typescript, -javascript,
-  -python), ignore, nucleo, gix, directories; insta, tempfile in tests. Ask before others.
+  -python), ignore, nucleo, gix, directories, tui-tree-widget, tui-input, crokey, confique,
+  terminal-colorsaurus, devicons; insta, tempfile in tests. Ask before others.
 - When something breaks, write the failing test first.
 - Never edit or delete an existing test to make it pass. Stop and ask.
 - Out of scope; don't build, stub or prepare: Claude sessions, tmux, services, diffs,
-  PR review, GitHub, SQLite, editing, language servers, SCIP, symbol search, remote access.
+  PR review (PR status via `gh` is in), SQLite, editing, language servers, SCIP, symbol
+  search, remote access.
 - If something is ambiguous, ask instead of guessing.

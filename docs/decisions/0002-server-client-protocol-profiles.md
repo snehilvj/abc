@@ -1,6 +1,6 @@
 # 0002: Server/client split, protocol and profiles
 
-- Status: accepted
+- Status: accepted, amended by 0004 (the client also reads its own settings file)
 - Date: 2026-10-27
 
 ## Context
