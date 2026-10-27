@@ -1,7 +1,7 @@
 # abc
 
 Personal, local-first terminal workspace for many repos and git worktrees.
-Decisions: `docs/decisions/`. Screen designs: `docs/ui/`.
+Decisions: `docs/decisions/`. Screen designs: https://claude.ai/artifact/6oZWb4B7QKA4PiGid8GNJ6
 
 ## Commands
 
@@ -15,8 +15,8 @@ Decisions: `docs/decisions/`. Screen designs: `docs/ui/`.
 
 ## UI first
 
-Per screen, in order: wireframe in `docs/ui/<screen>.md` with keys and empty/loading/error
-states (**stop for approval**) → build on fake data in `abc gallery <screen>` (**stop for
+Per screen, in order: wireframe on the screen-designs page, every state at 120x40 with keys
+(**stop for approval**) → build on fake data in `abc gallery <screen>` (**stop for
 review**) → insta snapshot (`TestBackend` 120x40) that reads like the wireframe → VHS tape
 in `docs/ui/tapes/<screen>.tape` → only then wire to real data.
 
