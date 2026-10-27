@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/abc-core", "crates/abcd", "crates/abc"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+abc-core = { path = "crates/abc-core" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
