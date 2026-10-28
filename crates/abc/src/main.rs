@@ -27,6 +27,9 @@ enum Command {
     /// The background server, abcd.
     #[command(subcommand)]
     Server(cli::Server),
+    /// Settings: where they are, whether they're valid, and every option.
+    #[command(subcommand)]
+    Config(cli::Config),
     /// Show abcd's log, or abc's.
     Logs(cli::Logs),
     /// Open a screen with fake data. No server needed.
@@ -41,6 +44,7 @@ fn main() -> anyhow::Result<ExitCode> {
     };
     match command {
         Command::Gallery(gallery) => abc::gallery::run(gallery).map(|()| ExitCode::SUCCESS),
+        Command::Config(config) => Ok(cli::config(config, &paths()?)),
         Command::Logs(logs) => cli::logs(&logs, &paths()?),
         Command::Server(server) => tokio::runtime::Runtime::new()
             .context("starting the runtime")?

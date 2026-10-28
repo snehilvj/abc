@@ -46,3 +46,35 @@ fn a_bad_profile_name_is_refused() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("isn't a profile name"));
 }
+
+#[test]
+fn config_path_template_and_check() {
+    let home = tempfile::tempdir().unwrap();
+    let path = abc(home.path(), &["--profile", "test", "config", "path"]);
+    assert_eq!(
+        String::from_utf8_lossy(&path.stdout),
+        "~/config/abc/test/config.toml\n"
+    );
+    let ok = abc(home.path(), &["--profile", "test", "config", "check"]);
+    assert!(ok.status.success(), "no file is fine: every default");
+
+    let template = abc(home.path(), &["--profile", "test", "config", "template"]);
+    let file = home.path().join("config/abc/test/config.toml");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, &template.stdout).unwrap();
+    let ok = abc(home.path(), &["--profile", "test", "config", "check"]);
+    assert_eq!(
+        String::from_utf8_lossy(&ok.stdout),
+        "ok ~/config/abc/test/config.toml\n",
+        "the template is valid"
+    );
+
+    std::fs::write(
+        &file,
+        "[sidebar]\nwidht = 3\n[keys.global]\n\"space q\" = \"teleport\"\n",
+    )
+    .unwrap();
+    let bad = abc(home.path(), &["--profile", "test", "config", "check"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("unknown field `widht`"));
+}

@@ -1,6 +1,6 @@
-//! The commands besides the TUI: `abc server …` and `abc logs`. Output is
-//! plain text without icons, so it pipes and greps cleanly. `server status`,
-//! `server stop` and `logs` never start abcd.
+//! The commands besides the TUI: `abc server …`, `abc config …` and `abc
+//! logs`. Output is plain text without icons, so it pipes and greps cleanly.
+//! `server status`, `server stop`, `config` and `logs` never start abcd.
 
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Seek, SeekFrom, Write};
@@ -12,6 +12,7 @@ use abc_core::build::BUILD_ID;
 use abc_core::client::{self, Client};
 use abc_core::paths::Paths;
 use abc_core::protocol::{Call, ServerStatus};
+use abc_core::settings::Settings;
 use anyhow::Context as _;
 
 #[derive(Debug, clap::Subcommand)]
@@ -22,6 +23,16 @@ pub enum Server {
     Restart,
     /// Stop abcd. Never starts it.
     Stop,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub enum Config {
+    /// Where this profile's settings file is.
+    Path,
+    /// Check the settings file, keys included.
+    Check,
+    /// Print every option with its docs and default, as a settings file to start from.
+    Template,
 }
 
 #[derive(Debug, clap::Args)]
@@ -74,6 +85,36 @@ pub async fn server(command: Server, paths: &Paths) -> anyhow::Result<ExitCode> 
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+pub fn config(command: Config, paths: &Paths) -> ExitCode {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let file = paths.config_file();
+    let shown = tilde(&file, home.as_deref());
+    match command {
+        Config::Path => println!("{shown}"),
+        Config::Template => print!(
+            "{}",
+            Settings::template(paths.profile.name(), Path::new(&shown))
+        ),
+        Config::Check => match check_settings(&file) {
+            Ok(_) => println!("ok {shown}"),
+            Err(errors) => {
+                for error in errors {
+                    eprintln!("error: {error}");
+                }
+                return ExitCode::FAILURE;
+            }
+        },
+    }
+    ExitCode::SUCCESS
+}
+
+/// The settings in `file`, keys and all, or everything wrong with them.
+pub fn check_settings(file: &Path) -> Result<Settings, Vec<String>> {
+    let settings = Settings::load(file).map_err(|e| vec![Settings::describe(&e)])?;
+    crate::keys::Keymap::from_settings(&settings.keys)?;
+    Ok(settings)
 }
 
 /// The abcd binary beside this abc.

@@ -488,6 +488,57 @@ impl Keymap {
         Ok(())
     }
 
+    /// The defaults with the `[keys]` settings applied: each table's
+    /// sequences bound in its context, "none" unbinding one, and groups
+    /// named. Every mistake is listed, by table and sequence.
+    pub fn from_settings(keys: &abc_core::settings::Keys) -> Result<Self, Vec<String>> {
+        let mut map = Self::defaults();
+        let mut errors = Vec::new();
+        let tables = [
+            ("global", Context::Global, &keys.global),
+            ("sidebar", Context::Sidebar, &keys.sidebar),
+            ("explorer", Context::Explorer, &keys.explorer),
+            ("viewer", Context::Viewer, &keys.viewer),
+            ("visual", Context::Visual, &keys.visual),
+        ];
+        // Unbinding first, so a sequence can take the place of one it overlapped.
+        for (table, context, bindings) in tables {
+            for (sequence, _) in bindings.iter().filter(|(_, a)| *a == "none") {
+                if let Err(e) = map.unbind(context, sequence) {
+                    errors.push(format!("keys.{table}: {sequence:?}: {e}"));
+                }
+            }
+        }
+        for (table, context, bindings) in tables {
+            for (sequence, action) in bindings.iter().filter(|(_, a)| *a != "none") {
+                let bound = action
+                    .parse::<Action>()
+                    .and_then(|action| map.bind(context, sequence, action));
+                if let Err(e) = bound {
+                    errors.push(format!("keys.{table}: {sequence:?}: {e}"));
+                }
+            }
+        }
+        for (sequence, name) in &keys.groups {
+            if let Err(e) = map.name_group(sequence, name) {
+                errors.push(format!("keys.groups: {sequence:?}: {e}"));
+            }
+        }
+        if errors.is_empty() {
+            Ok(map)
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Removes the binding of `keys` in `context`.
+    pub fn unbind(&mut self, context: Context, keys: &str) -> Result<(), String> {
+        let keys: Keys = keys.parse()?;
+        self.bindings
+            .retain(|(c, k, _)| !(*c == context && *k == keys));
+        Ok(())
+    }
+
     /// Names the group of sequences that start with `keys`.
     pub fn name_group(&mut self, keys: &str, name: &str) -> Result<(), String> {
         let keys: Keys = keys.parse()?;
@@ -821,6 +872,55 @@ mod tests {
         assert_eq!(label(Context::Global, Action::AddRepo), "space r a");
         assert_eq!(label(Context::Viewer, Action::HalfPageDown), "^d");
         assert_eq!(label(Context::Global, Action::Help), "?");
+    }
+
+    fn keys_settings(toml: &str) -> abc_core::settings::Keys {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        std::fs::write(&file, toml).unwrap();
+        abc_core::settings::Settings::from_file(&file).unwrap().keys
+    }
+
+    #[test]
+    fn settings_add_to_change_and_unbind_the_defaults() {
+        let keys = keys_settings(
+            "[keys.global]\n\"space x\" = \"quit\"\n\"ctrl-p\" = \"none\"\n\
+             [keys.viewer]\n\"g g\" = \"none\"\n\"g y\" = \"none\"\n\"g\" = \"first\"\n\
+             [keys.groups]\n\"space r\" = \"repositories\"\n",
+        );
+        let map = Keymap::from_settings(&keys).unwrap();
+        assert_eq!(
+            feed_all(&map, Context::Explorer, &[ch(' '), ch('x')]),
+            Feed::Action(Action::Quit)
+        );
+        let ctrl_p = press(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        assert_eq!(feed_all(&map, Context::Explorer, &[ctrl_p]), Feed::Ignored);
+        assert_eq!(
+            feed_all(&map, Context::Viewer, &[ch('g')]),
+            Feed::Action(Action::First),
+            "g g and g y unbound first, so g can stand alone"
+        );
+        let next = map.next(Context::Explorer, &[ch(' ')]);
+        assert!(next.contains(&(Keys(vec![ch('r')]), Next::Group("repositories".into()))));
+    }
+
+    #[test]
+    fn bad_key_settings_say_which_and_why() {
+        let keys = keys_settings(
+            "[keys.global]\n\"space q\" = \"teleport\"\n[keys.viewer]\n\"g\" = \"first\"\n",
+        );
+        let errors = Keymap::from_settings(&keys).unwrap_err();
+        assert_eq!(errors.len(), 2, "{errors:?}");
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.starts_with("keys.global: \"space q\"") && e.contains("teleport"))
+        );
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.starts_with("keys.viewer: ") && e.contains("overlap"))
+        );
     }
 
     #[test]
