@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · ecourts / gst-lookup ·   feat/gst-lookup ·   #88 draft ·   checks running · review required ─────────── dev ┐
+│  WORKTREES                           │ Code                                                                          │
+│    ecourts                          ├─ ~/code/wt/ecourts/gst-lookup ───────┬────────────────────────────────────────┤
+│    gst-lookup               #88   │   ecourts                           │ No file open.                          │
+│       feat/gst-lookup           4  │   tests                             │                                        │
+│     ocr-retry                        │   .gitignore                        │ Pick one in the explorer, or           │
+│       feat/ocr-retry      7  local │ 󰡨  Dockerfile                        │ press space f to search files.         │
+│       ecourts                       │   pyproject.toml                    │                                        │
+│       main                      3  │   README.md                         │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+├──────────────────────────────────────┴──────────────────────────────────────┴────────────────────────────────────────┤
+│ j k move · enter open · gg G top/end · h l focus · space commands · ^p find · tab last worktree · ? help · q quit    │
+└   removed privue-platform ──────────────────────────────────────────────────────────────────── 1 repo · 3 worktrees ┘

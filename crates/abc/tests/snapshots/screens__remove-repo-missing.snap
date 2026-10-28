@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · old-scraper ────────────────────────────────────────────────────────────────────────────────────────────── dev ┐
+│  WORKTREES                           │ Code                                                                          │
+│    privue-platform                  ├───────────────────────────────────────────────────────────────────────────────┤
+│    gst-check               #142   │                                                                               │
+│       feat/gst-check      3    2  │                                                                               │
+│     gst-rounding           #139   │                                                                               │
+│       fix/gst-rounding          1  │                                                                               │
+│     ledger-round            #141    │                                                                               │
+│       fix/ledger-round              │                                                                               │
+│     old-spike                #97    │                                                                               │
+│       spike/ocr                     │                                                                               │
+│     bisect                           │                                                                               │
+│       a1b2c3d detached              │                                                                               │
+│     old-idea                missing │                                                                               │
+│       feat/old-idea                 │                                                                               │
+│                             ┌ Remove repository ───────────────────────────────────────┐                             │
+│    ecourts                 │                                                          │                             │
+│     gst-lookup             │ Remove old-scraper from abc?                             │ng                           │
+│       feat/gst-lookup      │                                                          │                             │
+│     ocr-retry               │ Its folder is gone already; only the registration goes.  │exists.                      │
+│       feat/ocr-retry      │                                                          │                             │
+│                             ├──────────────────────────────────────────────────────────┤abc.                         │
+│    old-scraper            │ y remove · n keep                                        │                             │
+│                             └──────────────────────────────────────────────────────────┘                             │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+│                                      │                                                                               │
+├──────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────┤
+│ j k move · enter open · l explorer · space commands · ^p find · tab last worktree · ? help · q quit                  │
+└─────────────────────────────────────────────────────────────────────────────────────────────── 3 repos · 8 worktrees ┘
