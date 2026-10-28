@@ -6,7 +6,7 @@ Decisions: `docs/decisions/`. Screen designs: https://claude.ai/artifact/6oZWb4B
 ## Commands
 
 - `just check`: fmt, clippy `-D warnings`, all tests. Run before every commit.
-- `just gallery <screen> [--state s] [--theme dark|light] [--icons unicode]`: a screen on fake data.
+- `just gallery <screen> [--state s] [--theme dark|light]`: a screen on fake data. Needs a Nerd Font.
 
 ## Crates
 

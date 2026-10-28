@@ -1,4 +1,4 @@
-//! Drawing. Everything here is a pure function of the app state, theme and icons.
+//! Drawing. Everything here is a pure function of the app state and theme.
 
 pub mod sidebar;
 
@@ -10,16 +10,16 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::app::{App, Connection, Entry, Focus, StatusKind};
-use crate::icons::Icons;
+use crate::icons;
 use crate::keys::{self, Action, Context};
 use crate::layout::{self, Columns};
 use crate::theme::Theme;
 
-pub fn draw(frame: &mut Frame, area: Rect, app: &App, theme: &Theme, icons: &Icons) {
-    draw_buffer(frame.buffer_mut(), area, app, theme, icons);
+pub fn draw(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
+    draw_buffer(frame.buffer_mut(), area, app, theme);
 }
 
-pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme, icons: &Icons) {
+pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     if layout::too_small(area.width, area.height) {
         let text = format!(
             "abc needs at least {}x{} (now {}x{})",
@@ -33,8 +33,8 @@ pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme, icons
         return;
     }
     let g = Geometry::new(area, layout::columns(area.width, app.widths), split(app));
-    chrome(buf, &g, app, theme, icons);
-    sidebar(buf, &g, app, theme, icons);
+    chrome(buf, &g, app, theme);
+    sidebar(buf, &g, app, theme);
     match notice(app) {
         Some(lines) => centred(buf, &g, &lines, theme),
         None => panes(buf, &g, theme),
@@ -117,7 +117,7 @@ fn put(buf: &mut Buffer, x: u16, y: u16, symbol: &str, style: Style) {
 }
 
 /// Borders, dividers, the tab bar, pane headers and the title.
-fn chrome(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Icons) {
+fn chrome(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     let border = theme.border();
     hline(buf, g.top, g.left, g.right, border);
     hline(buf, g.bottom, g.left, g.right, border);
@@ -172,7 +172,7 @@ fn chrome(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Icon
     let profile = format!(" {} ", app.profile);
     let profile_x = g.right - profile.chars().count() as u16;
     buf.set_string(profile_x, g.top, &profile, profile_style);
-    let title = title(app, theme, icons);
+    let title = title(app, theme);
     buf.set_line(
         g.left + 1,
         g.top,
@@ -181,7 +181,7 @@ fn chrome(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Icon
     );
 }
 
-fn title<'a>(app: &'a App, theme: &Theme, icons: &Icons) -> Line<'a> {
+fn title<'a>(app: &'a App, theme: &Theme) -> Line<'a> {
     let dot = || Span::styled(" · ", theme.dim());
     let mut spans = vec![Span::raw(" "), Span::styled("abc", theme.bold())];
     let (repo, worktree) = match (app.current_worktree(), missing_repo_at_cursor(app)) {
@@ -199,14 +199,12 @@ fn title<'a>(app: &'a App, theme: &Theme, icons: &Icons) -> Line<'a> {
         ]);
         if let Head::Branch(branch) = &w.head {
             spans.push(dot());
-            if !icons.branch.is_empty() {
-                spans.push(Span::styled(format!("{} ", icons.branch), theme.dim()));
-            }
+            spans.push(Span::styled(format!("{} ", icons::BRANCH), theme.dim()));
             spans.push(Span::styled(branch.as_str(), theme.text()));
         }
         if let Some(pr) = &w.pr {
             spans.push(dot());
-            spans.extend(sidebar::pr_badge(pr, theme, icons));
+            spans.extend(sidebar::pr_badge(pr, theme));
             let state = match pr.state {
                 PrState::Open => "open",
                 PrState::Draft => "draft",
@@ -226,10 +224,7 @@ fn title<'a>(app: &'a App, theme: &Theme, icons: &Icons) -> Line<'a> {
                 let style = theme.style(sidebar::checks_color(checks, theme));
                 spans.extend([
                     dot(),
-                    Span::styled(
-                        format!("{} {words}", sidebar::checks_icon(checks, icons)),
-                        style,
-                    ),
+                    Span::styled(format!("{} {words}", sidebar::checks_icon(checks)), style),
                 ]);
             }
             if let Some(review) = pr.review {
@@ -255,7 +250,7 @@ fn missing_repo_at_cursor(app: &App) -> Option<&str> {
     }
 }
 
-fn sidebar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Icons) {
+fn sidebar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     let focused = app.focus == Focus::Sidebar || app.current_worktree().is_none();
     let header = theme.header(focused).add_modifier(Modifier::BOLD);
     buf.set_string(g.left + 3, g.tab_row(), "WORKTREES", header);
@@ -277,7 +272,7 @@ fn sidebar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Ico
         worktree_gap: app.worktree_gap,
         width: g.cols.sidebar,
     };
-    let rows = sidebar::rows(&app.repos, app.current.as_deref(), &options, theme, icons);
+    let rows = sidebar::rows(&app.repos, app.current.as_deref(), &options, theme);
     // Scroll just far enough to keep the cursor's last line on screen.
     let cursor_last = rows
         .iter()

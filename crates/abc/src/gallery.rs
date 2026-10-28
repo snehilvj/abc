@@ -13,7 +13,6 @@ use ratatui::widgets::Paragraph;
 
 use crate::app::{App, Connection, Entry, Focus, SidebarStyle, Status, StatusKind};
 use crate::fake;
-use crate::icons::{IconChoice, Icons};
 use crate::theme::{Theme, ThemeChoice};
 use crate::ui;
 
@@ -35,8 +34,6 @@ pub struct Args {
     pub state: Option<String>,
     #[arg(long, value_enum, default_value_t)]
     pub theme: ThemeChoice,
-    #[arg(long, value_enum, default_value_t)]
-    pub icons: IconChoice,
 }
 
 /// A named starting point for a screen: the state the app is in, and anything
@@ -45,7 +42,6 @@ pub struct Args {
 pub struct Preset {
     pub name: &'static str,
     pub app: App,
-    pub icons: Option<IconChoice>,
     /// Draw as if the terminal were this size.
     pub size: Option<(u16, u16)>,
 }
@@ -54,7 +50,6 @@ fn preset(name: &'static str, app: App) -> Preset {
     Preset {
         name,
         app,
-        icons: None,
         size: None,
     }
 }
@@ -112,10 +107,6 @@ pub fn frame() -> Vec<Preset> {
                 ..connected(fake::repos())
             },
         ),
-        Preset {
-            icons: Some(IconChoice::Unicode),
-            ..preset("unicode", connected(fake::repos()))
-        },
         preset("empty", empty),
         preset("loading", App::new("dev")),
         preset(
@@ -206,13 +197,12 @@ pub fn run(args: Args) -> Result<()> {
         set_title(args.screen, presets[index].name);
         loop {
             let preset = &presets[index];
-            let icons = Icons::new(preset.icons.unwrap_or(args.icons));
             terminal.draw(|frame| {
                 let area = match preset.size {
                     Some((w, h)) => Rect::new(0, 0, w, h).clamp(frame.area()),
                     None => frame.area(),
                 };
-                ui::draw(frame, area, &app, &theme, &icons);
+                ui::draw(frame, area, &app, &theme);
             })?;
             // Handle everything already typed before drawing again, so held keys never lag.
             let mut wait = true;

@@ -55,10 +55,11 @@ selection, ok, warning, error), git (changed, ahead, behind), pull requests
 (tree-sitter highlight names). Colours are anything ratatui's `Color` parses:
 names, `#rrggbb`, or indexes.
 
-**Icons.** `icons = "nerd" | "unicode"`, default `nerd`. File-type icons and
-their colours come from [devicons](https://crates.io/crates/devicons). Git, pull
-request and check glyphs come from a built-in table that `[icons]` can override
-one by one. `unicode` uses plain symbols that render in any font.
+**Icons.** abc requires a Nerd Font: a patched font such as FiraCode Nerd Font
+Mono, or Symbols Nerd Font Mono as a fallback in terminals that take a list of
+fonts. There is no plain-symbol mode. File-type icons and their colours come
+from [devicons](https://crates.io/crates/devicons). Git, pull request and check
+glyphs come from a built-in table that `[icons]` can override one by one.
 
 ## Consequences
 
@@ -66,7 +67,7 @@ one by one. `unicode` uses plain symbols that render in any font.
   TOML files you can copy and edit.
 - The client reads one file directly, in addition to `abc logs`. It still never
   touches repositories or runs git; abcd does.
-- Nerd Font glyphs need a Nerd Font, or a terminal that bundles the symbols;
-  `icons = "unicode"` is the escape hatch.
+- abc needs a Nerd Font, or a terminal that bundles the symbols. Without one,
+  icons draw as boxes; there is no fallback to maintain.
 - The settings structs grow with every feature. That is the price of
   "everything configurable", and the template keeps it visible.
