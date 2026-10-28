@@ -220,7 +220,16 @@ fn sibling_build(abcd: &Path) -> Result<String, StartError> {
         .arg("--print-build-id")
         .output()
         .map_err(|e| StartError::StartFailed(format!("running {}: {e}", abcd.display())))?;
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    let build = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    // Without an answer, abc can't tell which is stale: it leaves the running abcd be.
+    if !out.status.success() || build.is_empty() {
+        let said = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(StartError::StartFailed(format!(
+            "{} couldn't say its build: {said}",
+            abcd.display()
+        )));
+    }
+    Ok(build)
 }
 
 /// Starts `abcd` for the profile, detached in its own process group so it

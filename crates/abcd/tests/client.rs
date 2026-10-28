@@ -237,3 +237,35 @@ async fn reconnecting_reuses_abcd_or_starts_one_but_never_restarts_it() {
     assert_ne!(started.server.pid, first.server.pid, "started afresh");
     shut_down(started).await;
 }
+
+#[tokio::test]
+async fn a_sibling_that_cant_say_its_build_leaves_the_running_abcd_alone() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = home();
+    let paths = paths(home.path());
+    let mut running = Command::new(abcd())
+        .args(["--profile", "test", "--build-id", "0.0.0+feedface"])
+        .env("XDG_STATE_HOME", paths.state_home())
+        .env("XDG_CONFIG_HOME", paths.config_home())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    while !paths.socket().exists() {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let broken = home.path().join("abcd");
+    std::fs::write(&broken, "#!/bin/sh\necho oops >&2\nexit 1\n").unwrap();
+    std::fs::set_permissions(&broken, std::fs::Permissions::from_mode(0o755)).unwrap();
+    match client::start(&paths, &broken, &client::hello()).await {
+        Err(StartError::StartFailed(why)) => assert!(why.contains("build"), "{why}"),
+        other => panic!("expected StartFailed, got {:?}", other.map(|(_, s)| s)),
+    }
+    let still = Client::connect(&paths.socket(), &client::hello())
+        .await
+        .unwrap();
+    assert_eq!(still.server.pid, Some(running.id()), "not stopped");
+    shut_down(still).await;
+    let _ = running.wait();
+}
