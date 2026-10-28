@@ -119,6 +119,24 @@ impl Explorer {
         self.state.borrow().selected().to_vec()
     }
 
+    /// Every file's path, such as `src/main.rs`, in path order without regard to case.
+    pub fn files(&self) -> Vec<String> {
+        fn walk(nodes: &[Node], prefix: &str, out: &mut Vec<String>) {
+            for node in nodes {
+                let path = format!("{prefix}{}", node.name);
+                match &node.children {
+                    Some(children) => walk(children, &format!("{path}/"), out),
+                    None => out.push(path),
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(&self.tree, "", &mut files);
+        // Without regard to case, as the tree sorts.
+        files.sort_by_cached_key(|f| (f.to_lowercase(), f.clone()));
+        files
+    }
+
     /// Opens the folders above `path`, selects it, and opens it in the viewer.
     pub fn reveal(&mut self, path: &[String]) {
         let mut state = self.state.borrow_mut();
@@ -186,6 +204,21 @@ impl Clone for Explorer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_files_come_back_in_path_order() {
+        let e = Explorer::new(&["src/main.rs", "README.md", "src/a/b.rs", ".gitignore"]);
+        assert_eq!(
+            e.files(),
+            [".gitignore", "README.md", "src/a/b.rs", "src/main.rs"]
+        );
+        let e = Explorer::new(&["README.md", "apps/x.rs", "Zed.toml"]);
+        assert_eq!(
+            e.files(),
+            ["apps/x.rs", "README.md", "Zed.toml"],
+            "case doesn't count"
+        );
+    }
 
     fn names(nodes: &[Node]) -> Vec<&str> {
         nodes.iter().map(|n| n.name.as_str()).collect()

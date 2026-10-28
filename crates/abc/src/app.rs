@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use abc_core::model::{Repo, Worktree};
+use abc_core::model::{Head, Repo, Worktree};
 use crokey::KeyCombination;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tui_input::Input;
@@ -15,6 +15,7 @@ use crate::keys::{self, Action, Context, Feed, Keymap};
 use crate::layout::Widths;
 use crate::motion::{self, Find, Pos};
 use crate::search;
+use crate::switcher::{Candidate, Mode, Source, Switcher, Target};
 use crate::viewer::{Document, Place, Viewer, reference};
 
 /// Work the app asks for: abcd reads files; highlighting runs off the UI
@@ -173,6 +174,10 @@ pub struct App {
     pub search: Option<search::Search>,
     /// Whether the viewer shows the last search's matches; esc hides them.
     pub highlight: bool,
+    /// The switcher, while it's open; it takes every key.
+    pub switcher: Option<Switcher>,
+    /// Seconds since the Unix epoch, for "2h ago". The loop that runs the app keeps it current.
+    pub now: u64,
     pub quit: bool,
 }
 
@@ -206,6 +211,10 @@ impl App {
             prompt: None,
             search: None,
             highlight: false,
+            switcher: None,
+            now: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs()),
             quit: false,
         }
     }
@@ -255,6 +264,9 @@ impl App {
         }
         // A message lasts until the next key, as in Vim.
         self.status = None;
+        if self.switcher.is_some() {
+            return self.switcher_key(event);
+        }
         if self.prompt.is_some() {
             return self.prompt_key(event);
         }
@@ -342,6 +354,8 @@ impl App {
             }
             Action::Open if self.context() == Context::Sidebar => self.open_at_cursor(),
             Action::CopyReference => self.copy_reference(),
+            Action::Switcher | Action::FindWorktree => self.open_switcher(Mode::Worktrees),
+            Action::FindFile => self.open_switcher(Mode::Files),
             Action::Down | Action::Up | Action::First | Action::Last | Action::Open
                 if self.context() == Context::Explorer =>
             {
@@ -661,6 +675,122 @@ impl App {
         }
     }
 
+    /// What the switcher matches in `mode`: every worktree that's there, most
+    /// recently opened first, or the current worktree's files in path order.
+    pub fn switcher_source(&self, mode: Mode) -> Source {
+        match mode {
+            Mode::Worktrees => {
+                let mut worktrees: Vec<(&Repo, &Worktree)> = self
+                    .repos
+                    .iter()
+                    .flat_map(|r| r.worktrees().iter().map(move |w| (r, w)))
+                    .filter(|(_, w)| !w.missing)
+                    .collect();
+                // Never-opened last; the sort is stable, so ties keep the sidebar's order.
+                worktrees.sort_by_key(|(_, w)| std::cmp::Reverse(w.last_opened));
+                let candidates = worktrees
+                    .into_iter()
+                    .map(|(repo, w)| Candidate {
+                        target: Target::Worktree(w.path.clone()),
+                        text: format!("{} {} {}", repo.name, w.name, head_name(&w.head)),
+                    })
+                    .collect();
+                Source::Ready(candidates)
+            }
+            Mode::Files => match self.current_listing() {
+                None => Source::NoWorktree,
+                Some(Listing::Loading) => Source::Loading,
+                Some(Listing::Failed(why)) => Source::Failed(why.clone()),
+                Some(Listing::Ready(explorer)) => Source::Ready(
+                    explorer
+                        .files()
+                        .into_iter()
+                        .map(|path| Candidate {
+                            target: Target::File(path.clone()),
+                            text: path,
+                        })
+                        .collect(),
+                ),
+            },
+        }
+    }
+
+    /// Opens the switcher. Listing worktrees, it starts on the one before the
+    /// current, so `ctrl-p enter` goes back to it.
+    fn open_switcher(&mut self, mode: Mode) {
+        let mut switcher = Switcher::new(mode, self.switcher_source(mode));
+        if mode == Mode::Worktrees {
+            let current = self.current.clone().map(Target::Worktree);
+            let candidates = switcher.candidates();
+            if let Some(i) = switcher
+                .hits
+                .iter()
+                .position(|h| Some(&candidates[h.candidate].target) != current.as_ref())
+            {
+                switcher.select(i);
+            }
+        }
+        self.switcher = Some(switcher);
+    }
+
+    /// A key for the open switcher: enter opens the selection, esc closes, tab
+    /// changes mode, the arrows move, and the rest edit the query.
+    fn switcher_key(&mut self, event: KeyEvent) {
+        let Some(switcher) = &mut self.switcher else {
+            return;
+        };
+        match event.code {
+            KeyCode::Esc => self.switcher = None,
+            KeyCode::Enter => {
+                let target = switcher.target().cloned();
+                if let Some(target) = target {
+                    self.switcher = None;
+                    self.open_target(target);
+                }
+            }
+            KeyCode::Tab => {
+                let mode = switcher.mode.other();
+                let source = self.switcher_source(mode);
+                if let Some(switcher) = &mut self.switcher {
+                    switcher.switch(mode, source);
+                }
+            }
+            KeyCode::Down => switcher.down(),
+            KeyCode::Up => switcher.up(),
+            _ => {
+                if let Some(request) = to_input_request(&Event::Key(event))
+                    && switcher
+                        .input
+                        .handle(request)
+                        .is_some_and(|changed| changed.value)
+                {
+                    switcher.refresh();
+                }
+            }
+        }
+    }
+
+    /// Opens what the switcher chose: a worktree, or a file in the current
+    /// one, its folders opened in the explorer and the viewer focused.
+    fn open_target(&mut self, target: Target) {
+        match target {
+            Target::Worktree(path) => self.open(&path),
+            Target::File(file) => {
+                let path: NodePath = file.split('/').map(String::from).collect();
+                if let Some(Listing::Ready(explorer)) =
+                    self.current.as_ref().and_then(|p| self.listings.get_mut(p))
+                {
+                    explorer.reveal(&path);
+                }
+                // A file already open keeps its place.
+                if self.current_viewer().is_none_or(|v| v.path != path) {
+                    self.open_file(path);
+                }
+                self.focus = Focus::Viewer;
+            }
+        }
+    }
+
     /// Puts `text` on the clipboard and says what went.
     fn copy(&mut self, text: String, what: String) {
         self.outbox.push(Cmd::Copy(text));
@@ -850,6 +980,13 @@ impl App {
             self.sidebar_cursor = i;
         }
         self.focus = Focus::Explorer;
+    }
+}
+
+/// A branch's name, or a detached HEAD's commit.
+pub fn head_name(head: &Head) -> &str {
+    match head {
+        Head::Branch(name) | Head::Detached(name) => name,
     }
 }
 
@@ -1382,6 +1519,89 @@ mod tests {
         assert_eq!(cursor(&app), (3, 9));
         press_drawn(&mut app, "n");
         assert_eq!(cursor(&app), (0, 23), "after #, n goes on backwards");
+    }
+
+    fn ctrl_p(app: &mut App) {
+        app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+    }
+
+    fn switcher(app: &App) -> &Switcher {
+        app.switcher.as_ref().expect("the switcher is open")
+    }
+
+    #[test]
+    fn ctrl_p_enter_goes_back_to_the_last_worktree() {
+        let mut app = with_files();
+        let gst_check = fake::current();
+        press_drawn(&mut app, "h j enter");
+        assert_ne!(app.current.as_ref(), Some(&gst_check));
+        ctrl_p(&mut app);
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(
+            (app.current, app.switcher.is_none()),
+            (Some(gst_check), true)
+        );
+    }
+
+    #[test]
+    fn the_switcher_filters_as_the_query_is_typed() {
+        let mut app = with_files();
+        ctrl_p(&mut app);
+        assert_eq!(switcher(&app).hits.len(), 7);
+        press(&mut app, "g s t");
+        assert_eq!(switcher(&app).hits.len(), 3);
+        key(&mut app, KeyCode::Down);
+        assert_eq!(switcher(&app).selected, 1);
+        key(&mut app, KeyCode::Esc);
+        assert!(app.switcher.is_none());
+        assert_eq!(app.current, Some(fake::current()), "esc opened nothing");
+    }
+
+    #[test]
+    fn space_f_opens_a_file_with_its_folders_and_focuses_the_viewer() {
+        let mut app = with_files();
+        press(&mut app, "space f s c o r e");
+        assert_eq!(switcher(&app).mode, Mode::Files);
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(app.focus, Focus::Viewer);
+        assert_eq!(selected(&app), "packages/scoring/score.py");
+        assert_eq!(
+            app.outbox,
+            [Cmd::ReadFile {
+                worktree: fake::current(),
+                path: "packages/scoring/score.py".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_file_already_open_keeps_its_place() {
+        let mut app = with_files();
+        app.viewers.insert(
+            fake::current(),
+            fake::viewer("packages/integrations/gst/verify.ts"),
+        );
+        press(&mut app, "space f v e r i f y . t s");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.outbox.is_empty(), "not read again");
+        assert_eq!(app.focus, Focus::Viewer);
+    }
+
+    #[test]
+    fn tab_changes_mode_and_keeps_the_query() {
+        let mut app = with_files();
+        ctrl_p(&mut app);
+        press(&mut app, "g s t");
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(
+            (switcher(&app).mode, switcher(&app).input.value()),
+            (Mode::Files, "gst")
+        );
+        assert_eq!(
+            app.current,
+            Some(fake::current()),
+            "tab didn't switch worktrees"
+        );
     }
 
     #[test]

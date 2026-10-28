@@ -85,7 +85,11 @@ impl Columns {
 }
 
 /// Changed files, then ahead/behind (or `local`), each in its own column.
-fn status_cells<'a>(git: Option<&GitStatus>, c: &Columns, theme: &Theme) -> Vec<Span<'a>> {
+pub(crate) fn status_cells<'a>(
+    git: Option<&GitStatus>,
+    c: &Columns,
+    theme: &Theme,
+) -> Vec<Span<'a>> {
     if c.changed + c.upstream == 0 {
         return Vec::new();
     }
@@ -142,7 +146,7 @@ fn status_cells<'a>(git: Option<&GitStatus>, c: &Columns, theme: &Theme) -> Vec<
 }
 
 /// Padlock, the PR badge (number right-aligned), then the checks icon, each in its own column.
-fn pr_cells<'a>(w: &Worktree, c: &Columns, theme: &Theme) -> Vec<Span<'a>> {
+pub(crate) fn pr_cells<'a>(w: &Worktree, c: &Columns, theme: &Theme) -> Vec<Span<'a>> {
     let mut cells = Vec::new();
     if c.lock {
         cells.push(Span::styled(

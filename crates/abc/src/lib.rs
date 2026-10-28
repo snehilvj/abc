@@ -11,6 +11,7 @@ pub mod keys;
 pub mod layout;
 pub mod motion;
 pub mod search;
+pub mod switcher;
 pub mod theme;
 pub mod ui;
 pub mod viewer;

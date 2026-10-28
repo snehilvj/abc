@@ -16,6 +16,7 @@ crossterm.workspace = true
 devicons.workspace = true
 ratatui.workspace = true
 terminal-colorsaurus.workspace = true
+nucleo.workspace = true
 tree-sitter.workspace = true
 tree-sitter-highlight.workspace = true
 tree-sitter-javascript.workspace = true

@@ -27,6 +27,7 @@ pub enum Screen {
     Frame,
     Explorer,
     Viewer,
+    Switcher,
     /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
     Icons,
     /// Panics on the first key, to check the terminal comes back clean.
@@ -69,6 +70,7 @@ pub fn presets(screen: Screen) -> Vec<Preset> {
         Screen::Frame => frame(),
         Screen::Explorer => explorer(),
         Screen::Viewer => viewer(),
+        Screen::Switcher => switcher(),
         Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
@@ -79,6 +81,7 @@ fn connected(repos: Vec<abc_core::model::Repo>) -> App {
     app.listings = fake::listings(&repos);
     app.repos = repos;
     app.connection = Connection::Connected;
+    app.now = fake::NOW;
     app.open(&fake::current());
     let verify = "packages/integrations/gst/verify.ts";
     app.viewers.insert(fake::current(), fake::viewer(verify));
@@ -281,6 +284,39 @@ pub fn viewer() -> Vec<Preset> {
     ]
 }
 
+/// The switcher's states, opened over the populated frame with the keys that open it.
+pub fn switcher() -> Vec<Preset> {
+    let ctrl_p = |app: App| pressed(app, KeyCode::Char('p'), KeyModifiers::CONTROL);
+    let worktrees = || ctrl_p(connected(fake::repos()));
+    let files = |listing: Option<Listing>| {
+        let mut app = connected(fake::repos());
+        if let Some(listing) = listing {
+            app.listings.insert(fake::current(), listing);
+        }
+        typed(app, " f")
+    };
+    vec![
+        preset("worktrees", typed(worktrees(), "gst")),
+        preset("on-open", worktrees()),
+        preset("no-match", typed(worktrees(), "zoho")),
+        preset("files", typed(files(None), "verif")),
+        preset("files-all", files(None)),
+        preset(
+            "files-loading",
+            typed(files(Some(Listing::Loading)), "verif"),
+        ),
+        preset(
+            "files-error",
+            files(Some(Listing::Failed("permission denied".into()))),
+        ),
+    ]
+}
+
+fn pressed(mut app: App, code: KeyCode, modifiers: KeyModifiers) -> App {
+    app.handle_key(KeyEvent::new(code, modifiers));
+    app
+}
+
 /// `app` after typing `keys` in it, one key per character; `\n` is enter.
 fn typed(mut app: App, keys: &str) -> App {
     for c in keys.chars() {
@@ -338,7 +374,7 @@ pub fn run(args: Args) -> Result<()> {
     match args.screen {
         Screen::Panic => return run_panic(),
         Screen::Icons => return run_catalog(args.state.as_deref(), Theme::resolve(args.theme)),
-        Screen::Frame | Screen::Explorer | Screen::Viewer => {}
+        Screen::Frame | Screen::Explorer | Screen::Viewer | Screen::Switcher => {}
     }
     let presets = presets(args.screen);
     let names = || {

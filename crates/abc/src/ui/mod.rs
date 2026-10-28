@@ -1,9 +1,11 @@
 //! Drawing. Everything here is a pure function of the app state and theme.
 
 pub mod catalog;
+pub mod dialog;
 pub mod explorer;
 pub mod label;
 pub mod sidebar;
+pub mod switcher;
 pub mod viewer;
 
 use abc_core::model::{Checks, Head, PrState, Review};
@@ -52,6 +54,10 @@ pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     }
     keybar(buf, &g, app, theme);
     status_line(buf, &g, app, theme);
+    if let Some(s) = &app.switcher {
+        fade(buf, area, theme);
+        switcher::draw(buf, area, app, s, theme);
+    }
 }
 
 /// Whether the Code tab shows the explorer and viewer side by side.
