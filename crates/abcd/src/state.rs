@@ -29,6 +29,8 @@ pub struct State {
     settings: std::sync::RwLock<Settings>,
     /// Set while pull requests are being fetched, so fetches never overlap.
     fetching: AtomicBool,
+    /// Set while a timed rescan runs, so a slow one never piles up behind itself.
+    scanning: AtomicBool,
     inner: Mutex<Inner>,
     /// Changes, for every subscribed connection.
     pub events: broadcast::Sender<Event>,
@@ -100,6 +102,7 @@ impl State {
             home,
             settings: std::sync::RwLock::new(settings.clone()),
             fetching: AtomicBool::new(false),
+            scanning: AtomicBool::new(false),
             inner: Mutex::new(Inner {
                 saved,
                 repos,
@@ -133,15 +136,39 @@ impl State {
     }
 
     /// Scans again, telling subscribers if anything changed.
+    ///
+    /// git runs without the lock held, so reading files and the rest carry
+    /// on meanwhile. A repository added or removed during the scan has
+    /// scanned itself, and that stands; a visit during it keeps its time.
     pub async fn rescan(&self) -> Vec<Repo> {
+        let saved = self.inner.lock().await.saved.clone();
+        let mut repos = scan_all(&saved).await;
         let mut inner = self.inner.lock().await;
-        let mut repos = scan_all(&inner.saved).await;
+        if inner.saved.repos != saved.repos {
+            return inner.repos.clone();
+        }
+        for repo in &mut repos {
+            if let RepoState::Present { worktrees } = &mut repo.state {
+                for worktree in worktrees {
+                    worktree.last_opened = inner.saved.visits.get(&worktree.path).copied();
+                }
+            }
+        }
         inner.attach(&mut repos);
         if repos != inner.repos {
             inner.repos = repos;
             self.changed(&inner);
         }
         inner.repos.clone()
+    }
+
+    /// A rescan on the timer: skipped if the last is still running.
+    pub async fn rescan_in_turn(&self) {
+        if self.scanning.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        self.rescan().await;
+        self.scanning.store(false, Ordering::SeqCst);
     }
 
     fn changed(&self, inner: &Inner) {

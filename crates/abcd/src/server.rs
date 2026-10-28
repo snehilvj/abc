@@ -160,7 +160,7 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             _ = rescan.tick() => if server.state.subscribers.load(Ordering::SeqCst) > 0 {
                 let server = server.clone();
                 tokio::spawn(async move {
-                    server.state.rescan().await;
+                    server.state.rescan_in_turn().await;
                     server.state.fetch_prs_if_due().await;
                 });
             },
