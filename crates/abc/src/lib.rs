@@ -1,6 +1,7 @@
 //! The abc terminal client and CLI. Everything it does goes through abcd.
 
 pub mod app;
+pub mod explorer;
 pub mod fake;
 pub mod gallery;
 pub mod icons;

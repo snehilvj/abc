@@ -5,22 +5,22 @@ expression: screen
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
 │                                      ├─ ~/code/wt/privue-platform/gst-check ┬────────────────────────────────────────┤
-│    privue-platform                  │ The file explorer is the             │ No file open.                          │
-│    gst-che…   3    2     #142   │ next screen to build.                │                                        │
-│     gst-rou…         1     #139   │                                      │                                        │
-│     ledger-…   1           #141    │                                      │                                        │
-│       priv…                         │                                      │                                        │
-│                                      │                                      │                                        │
-│    ecourts                          │                                      │                                        │
-│     gst-loo…         4      #88   │                                      │                                        │
-│     ocr-ret…   7  local             │                                      │                                        │
-│       ecou…         3              │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
+│    privue-platform                  │   .github                           │ verify.ts                              │
+│    gst-che…   3    2     #142   │   apps                              │ The viewer is the next screen.         │
+│     gst-rou…         1     #139   │   data                              │                                        │
+│     ledger-…   1           #141    │   docs                              │                                        │
+│       priv…                         │   generated                         │                                        │
+│                                      │   packages                          │                                        │
+│    ecourts                          │     integrations                    │                                        │
+│     gst-loo…         4      #88   │       gst                           │                                        │
+│     ocr-ret…   7  local             │         client.ts                   │                                        │
+│       ecou…         3              │         verify.ts                   │                                        │
+│                                      │     scoring                         │                                        │
+│                                      │     shared                          │                                        │
+│                                      │   .gitignore                        │                                        │
+│                                      │   package.json                      │                                        │
+│                                      │   README.md                         │                                        │
+│                                      │   tsconfig.json                     │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │

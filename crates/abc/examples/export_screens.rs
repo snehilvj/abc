@@ -74,6 +74,13 @@ fn main() {
             &render(&preset.app, preset.size.unwrap_or((120, 40)), &theme),
         );
     }
+    for preset in gallery::presets(Screen::Explorer) {
+        dump(
+            "explorer",
+            preset.name,
+            &render(&preset.app, (120, 40), &theme),
+        );
+    }
     let populated = &presets[0].app;
     for (name, focus) in [
         ("explorer", Focus::Explorer),

@@ -12,6 +12,7 @@ use ratatui::layout::Rect;
 use ratatui::widgets::Paragraph;
 
 use crate::app::{App, Connection, Entry, Focus, SidebarStyle, Status, StatusKind};
+use crate::explorer::{Explorer, Listing};
 use crate::fake;
 use crate::theme::{Theme, ThemeChoice};
 use crate::ui;
@@ -19,6 +20,7 @@ use crate::ui;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Screen {
     Frame,
+    Explorer,
     /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
     Icons,
     /// Panics on the first key, to check the terminal comes back clean.
@@ -59,6 +61,7 @@ fn preset(name: &'static str, app: App) -> Preset {
 pub fn presets(screen: Screen) -> Vec<Preset> {
     match screen {
         Screen::Frame => frame(),
+        Screen::Explorer => explorer(),
         Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
@@ -66,6 +69,7 @@ pub fn presets(screen: Screen) -> Vec<Preset> {
 /// Connected to abcd, with `repos` and the usual worktree open.
 fn connected(repos: Vec<abc_core::model::Repo>) -> App {
     let mut app = App::new("dev");
+    app.listings = fake::listings(&repos);
     app.repos = repos;
     app.connection = Connection::Connected;
     app.open(&fake::current());
@@ -169,11 +173,29 @@ pub fn frame() -> Vec<Preset> {
     ]
 }
 
+/// The explorer's states, each on the populated frame with the explorer focused.
+pub fn explorer() -> Vec<Preset> {
+    let with = |listing: Listing| {
+        let mut app = connected(fake::repos());
+        app.listings.insert(fake::current(), listing);
+        app
+    };
+    vec![
+        preset("tree", connected(fake::repos())),
+        preset("loading", with(Listing::Loading)),
+        preset(
+            "empty",
+            with(Listing::Ready(Box::new(Explorer::new::<&str>(&[])))),
+        ),
+        preset("error", with(Listing::Failed("permission denied".into()))),
+    ]
+}
+
 pub fn run(args: Args) -> Result<()> {
     match args.screen {
         Screen::Panic => return run_panic(),
         Screen::Icons => return run_catalog(args.state.as_deref(), Theme::resolve(args.theme)),
-        Screen::Frame => {}
+        Screen::Frame | Screen::Explorer => {}
     }
     let presets = presets(args.screen);
     let names = || {

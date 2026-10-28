@@ -5,22 +5,22 @@ expression: screen
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ────────────────────────────────────────────────────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
 │                                      ├─ ~/code/wt/privue-platform/gst-check ┬────────────────────────────────────────┤
-│    privue-platform                  │ The file explorer is the             │ No file open.                          │
-│    gst-check                        │ next screen to build.                │                                        │
-│       feat/gst-check      3    2  │                                      │                                        │
-│     gst-rounding                     │                                      │                                        │
-│       fix/gst-rounding          1  │                                      │                                        │
-│     ledger-round                     │                                      │                                        │
-│       fix/ledger-round    1        │                                      │                                        │
-│       privue-platform               │                                      │                                        │
-│       main                          │                                      │                                        │
-│                                      │                                      │                                        │
-│    ecourts                          │                                      │                                        │
-│     gst-lookup                       │                                      │                                        │
-│       feat/gst-lookup           4  │                                      │                                        │
-│     ocr-retry                        │                                      │                                        │
-│       feat/ocr-retry      7  local │                                      │                                        │
-│       ecourts                       │                                      │                                        │
+│    privue-platform                  │   .github                           │ verify.ts                              │
+│    gst-check                        │   apps                              │ The viewer is the next screen.         │
+│       feat/gst-check      3    2  │   data                              │                                        │
+│     gst-rounding                     │   docs                              │                                        │
+│       fix/gst-rounding          1  │   generated                         │                                        │
+│     ledger-round                     │   packages                          │                                        │
+│       fix/ledger-round    1        │     integrations                    │                                        │
+│       privue-platform               │       gst                           │                                        │
+│       main                          │         client.ts                   │                                        │
+│                                      │         verify.ts                   │                                        │
+│    ecourts                          │     scoring                         │                                        │
+│     gst-lookup                       │     shared                          │                                        │
+│       feat/gst-lookup           4  │   .gitignore                        │                                        │
+│     ocr-retry                        │   package.json                      │                                        │
+│       feat/ocr-retry      7  local │   README.md                         │                                        │
+│       ecourts                       │   tsconfig.json                     │                                        │
 │       main                      3  │                                      │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │

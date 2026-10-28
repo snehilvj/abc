@@ -1,6 +1,7 @@
 //! Drawing. Everything here is a pure function of the app state and theme.
 
 pub mod catalog;
+pub mod explorer;
 pub mod label;
 pub mod sidebar;
 
@@ -12,6 +13,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::app::{App, Connection, Entry, Focus, StatusKind};
+use crate::explorer::Listing;
 use crate::icons;
 use crate::keys::{self, Action, Context};
 use crate::layout::{self, Columns};
@@ -39,7 +41,7 @@ pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     sidebar(buf, &g, app, theme);
     match notice(app) {
         Some(lines) => centred(buf, &g, &lines, theme),
-        None => panes(buf, &g, theme),
+        None => panes(buf, &g, app, theme),
     }
     if app.connection == Connection::Lost {
         fade(
@@ -437,13 +439,32 @@ fn centred(buf: &mut Buffer, g: &Geometry, lines: &[NoticeLine], theme: &Theme) 
     }
 }
 
-/// The explorer and viewer. Both arrive with their own screens; until then the
-/// panes say so.
-fn panes(buf: &mut Buffer, g: &Geometry, theme: &Theme) {
-    let (y0, _) = g.content_rows();
-    buf.set_string(g.d1 + 2, y0, "The file explorer is the", theme.dim());
-    buf.set_string(g.d1 + 2, y0 + 1, "next screen to build.", theme.dim());
-    buf.set_string(g.d2 + 2, y0, "No file open.", theme.dim());
+/// The explorer, and the viewer's pane, which arrives with its own screen.
+fn panes(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
+    let (y0, y1) = g.content_rows();
+    let listing = app.current_listing();
+    let area = Rect::new(g.d1 + 1, y0, g.cols.explorer, y1 - y0 + 1);
+    explorer::draw(buf, area, listing, app.focus == Focus::Explorer, theme);
+    let open = match listing {
+        Some(Listing::Ready(e)) => e.open.as_ref().and_then(|p| p.last()),
+        _ => None,
+    };
+    let width = (g.right - g.d2 - 3) as usize;
+    match open {
+        Some(name) => {
+            buf.set_stringn(g.d2 + 2, y0, name, width, theme.text());
+            buf.set_stringn(
+                g.d2 + 2,
+                y0 + 1,
+                "The viewer is the next screen.",
+                width,
+                theme.dim(),
+            );
+        }
+        None => {
+            buf.set_stringn(g.d2 + 2, y0, "No file open.", width, theme.dim());
+        }
+    }
 }
 
 fn fade(buf: &mut Buffer, area: Rect, theme: &Theme) {

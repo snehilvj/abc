@@ -1,11 +1,13 @@
 //! The client's state and how keys change it. Drawing lives in `ui`.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use abc_core::model::{Repo, Worktree};
 use crokey::KeyCombination;
 use ratatui::crossterm::event::{KeyEvent, KeyEventKind};
 
+use crate::explorer::Listing;
 use crate::keys::{self, Action, Context, Feed, Keymap};
 use crate::layout::Widths;
 
@@ -78,6 +80,8 @@ pub enum Entry {
 pub struct App {
     pub profile: String,
     pub repos: Vec<Repo>,
+    /// Each worktree's files and explorer, kept while abc runs.
+    pub listings: HashMap<PathBuf, Listing>,
     pub current: Option<PathBuf>,
     pub last: Option<PathBuf>,
     pub focus: Focus,
@@ -104,6 +108,7 @@ impl App {
         Self {
             profile: profile.into(),
             repos: Vec::new(),
+            listings: HashMap::new(),
             current: None,
             last: None,
             focus: Focus::Sidebar,
@@ -209,7 +214,33 @@ impl App {
                 }
             }
             Action::Open if self.context() == Context::Sidebar => self.open_at_cursor(),
+            Action::Down | Action::Up | Action::First | Action::Last | Action::Open
+                if self.context() == Context::Explorer =>
+            {
+                self.explorer_action(action)
+            }
             // The switcher, dialogs, help, explorer and viewer arrive with their screens.
+            _ => {}
+        }
+    }
+
+    /// The current worktree's listing.
+    pub fn current_listing(&self) -> Option<&Listing> {
+        self.current.as_ref().and_then(|p| self.listings.get(p))
+    }
+
+    fn explorer_action(&mut self, action: Action) {
+        let Some(Listing::Ready(explorer)) =
+            self.current.as_ref().and_then(|p| self.listings.get_mut(p))
+        else {
+            return;
+        };
+        match action {
+            Action::Down => explorer.down(),
+            Action::Up => explorer.up(),
+            Action::First => explorer.first(),
+            Action::Last => explorer.last(),
+            Action::Open => explorer.activate(),
             _ => {}
         }
     }
@@ -266,6 +297,10 @@ impl App {
 
     /// Makes `path` the current worktree and focuses the explorer.
     pub fn open(&mut self, path: &Path) {
+        // abcd sends the file list; until it arrives the explorer says it's loading.
+        self.listings
+            .entry(path.to_path_buf())
+            .or_insert(Listing::Loading);
         if self.current.as_deref() != Some(path) {
             self.last = self.current.replace(path.to_path_buf());
         }
@@ -373,6 +408,79 @@ mod tests {
             app.status.unwrap().text,
             "space x isn't bound · ? lists the keys"
         );
+    }
+
+    /// The usual worktree open, with every worktree's files loaded.
+    fn with_files() -> App {
+        let mut app = App::new("dev");
+        app.repos = fake::repos();
+        app.listings = fake::listings(&app.repos);
+        app.connection = Connection::Connected;
+        app.open(&fake::current());
+        app
+    }
+
+    /// Presses keys the way the real loop does: drawing before each one, since
+    /// the tree widget moves through the rows it last drew.
+    fn press_drawn(app: &mut App, keys: &str) {
+        for key in keys.split(' ') {
+            let mut buf = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 120, 40));
+            let area = buf.area;
+            crate::ui::draw_buffer(&mut buf, area, app, &crate::theme::Theme::dark());
+            press(app, key);
+        }
+    }
+
+    fn explorer(app: &App) -> &crate::explorer::Explorer {
+        match app.current_listing() {
+            Some(Listing::Ready(e)) => e,
+            other => panic!("no explorer: {other:?}"),
+        }
+    }
+
+    fn selected(app: &App) -> String {
+        explorer(app).selected().join("/")
+    }
+
+    #[test]
+    fn explorer_keys_move_through_the_tree_and_fold_folders() {
+        let mut app = with_files();
+        assert_eq!(app.focus, Focus::Explorer);
+        assert_eq!(selected(&app), "packages/integrations/gst/verify.ts");
+        press_drawn(&mut app, "k k");
+        assert_eq!(selected(&app), "packages/integrations/gst");
+        press_drawn(&mut app, "enter j");
+        // gst is closed, so down skips its files.
+        assert_eq!(selected(&app), "packages/scoring");
+        press_drawn(&mut app, "enter j enter");
+        assert_eq!(selected(&app), "packages/scoring/score.py");
+        assert_eq!(
+            explorer(&app).open.as_ref().map(|p| p.join("/")).as_deref(),
+            Some("packages/scoring/score.py")
+        );
+    }
+
+    #[test]
+    fn gg_and_g_jump_to_the_ends_of_the_tree() {
+        let mut app = with_files();
+        press_drawn(&mut app, "g g");
+        assert_eq!(selected(&app), ".github");
+        press_drawn(&mut app, "G");
+        assert_eq!(selected(&app), "tsconfig.json");
+    }
+
+    #[test]
+    fn each_worktree_keeps_its_own_explorer() {
+        let mut app = with_files();
+        press_drawn(&mut app, "k");
+        assert_eq!(selected(&app), "packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "h j enter");
+        assert_eq!(
+            app.current.as_deref(),
+            Some(Path::new("~/code/wt/privue-platform/gst-rounding"))
+        );
+        press_drawn(&mut app, "tab");
+        assert_eq!(selected(&app), "packages/integrations/gst/client.ts");
     }
 
     #[test]

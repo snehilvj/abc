@@ -243,3 +243,64 @@ const DAY: u64 = 24 * HOUR;
 pub fn current() -> PathBuf {
     PathBuf::from("~/code/wt/privue-platform/gst-check")
 }
+
+/// The files of every privue-platform worktree.
+pub const PLATFORM_FILES: &[&str] = &[
+    ".github/workflows/check.yml",
+    ".gitignore",
+    "apps/web/package.json",
+    "apps/web/src/main.tsx",
+    "apps/web/src/pages/home.tsx",
+    "apps/web/src/pages/verify-gst.tsx",
+    "data/dump.sql",
+    "docs/gst.md",
+    "docs/logo.png",
+    "generated/rows.rs",
+    "package.json",
+    "packages/integrations/gst/client.ts",
+    "packages/integrations/gst/verify.ts",
+    "packages/scoring/score.py",
+    "packages/scoring/verifier.py",
+    "packages/shared/text.ts",
+    "README.md",
+    "tsconfig.json",
+];
+
+/// The files of every ecourts worktree.
+pub const ECOURTS_FILES: &[&str] = &[
+    ".gitignore",
+    "Dockerfile",
+    "README.md",
+    "ecourts/__init__.py",
+    "ecourts/lookup.py",
+    "ecourts/ocr.py",
+    "ecourts/retry.py",
+    "pyproject.toml",
+    "tests/test_lookup.py",
+    "tests/test_ocr.py",
+];
+
+/// Loaded file lists for every worktree, with `verify.ts` open in the current one.
+pub fn listings(repos: &[Repo]) -> std::collections::HashMap<PathBuf, crate::explorer::Listing> {
+    use crate::explorer::{Explorer, Listing};
+    let mut listings = std::collections::HashMap::new();
+    for repo in repos {
+        let files = if repo.name == "ecourts" {
+            ECOURTS_FILES
+        } else {
+            PLATFORM_FILES
+        };
+        for w in repo.worktrees() {
+            let mut explorer = Explorer::new(files);
+            if w.path == current() {
+                let verify: Vec<String> = "packages/integrations/gst/verify.ts"
+                    .split('/')
+                    .map(String::from)
+                    .collect();
+                explorer.reveal(&verify);
+            }
+            listings.insert(w.path.clone(), Listing::Ready(Box::new(explorer)));
+        }
+    }
+    listings
+}
