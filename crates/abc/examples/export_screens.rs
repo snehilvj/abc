@@ -3,7 +3,7 @@
 //! `screen <screen> <state> <width> <height>`, then one line per cell, row by
 //! row: `<symbol> <fg> <bg> <modifiers>`, tab-separated. Colours are `#rrggbb`,
 //! or `-` for the terminal's default; modifiers are `b` (bold), `u`
-//! (underlined), or `-`.
+//! (underlined), `r` (reversed, the viewer's cursor), or `-`.
 //!
 //!     cargo run -q -p abc --example export_screens > target/screens.tsv
 //!
@@ -39,6 +39,9 @@ fn dump(screen: &str, state: &str, buf: &Buffer) {
             }
             if cell.modifier.contains(Modifier::UNDERLINED) {
                 modifiers.push('u');
+            }
+            if cell.modifier.contains(Modifier::REVERSED) {
+                modifiers.push('r');
             }
             if modifiers.is_empty() {
                 modifiers.push('-');
