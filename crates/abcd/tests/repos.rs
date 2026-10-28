@@ -187,3 +187,112 @@ async fn opening_a_worktree_is_remembered() {
     assert_eq!(unknown.code, ErrorCode::NotFound);
     shut_down(client).await;
 }
+
+/// A bare repository at `home/remote/<name>.git` to clone, as a file:// URL,
+/// and settings that clone into `home/code`.
+fn remote(home: &std::path::Path, name: &str) -> String {
+    let upstream = repo(&home.join("upstream"), name, &[]);
+    let bare = home.join("remote").join(format!("{name}.git"));
+    std::fs::create_dir_all(bare.parent().unwrap()).unwrap();
+    git(
+        home,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            upstream.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
+    let config = common::paths(home).config_file();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    let clone_dir = home.join("code");
+    std::fs::write(
+        &config,
+        format!(
+            "[add_repo]\nclone_dir = {:?}\n",
+            clone_dir.display().to_string()
+        ),
+    )
+    .unwrap();
+    format!("file://{}", bare.display())
+}
+
+fn check_url(url: &str, name: &str) -> Call {
+    Call::RepoCheck {
+        path: url.into(),
+        name: name.into(),
+    }
+}
+
+#[tokio::test]
+async fn a_git_url_is_cloned_and_added() {
+    let home = home();
+    let url = remote(home.path(), "app");
+    let client = connect(home.path()).await;
+    let into = home.path().join("code/app").display().to_string();
+    let check: RepoCheck = client.call(check_url(&url, "")).await.unwrap();
+    assert_eq!(check, RepoCheck::Remote { into: into.clone() });
+    let named: RepoCheck = client.call(check_url(&url, "mine")).await.unwrap();
+    assert_eq!(
+        named,
+        RepoCheck::Remote {
+            into: home.path().join("code/mine").display().to_string()
+        },
+        "the name decides the folder"
+    );
+
+    let added: protocol::Added = client
+        .call(Call::RepoAdd {
+            path: url.clone(),
+            name: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(added.name, "app");
+    assert!(home.path().join("code/app/.git").exists(), "cloned");
+    assert_eq!(added.repos[0].worktrees().len(), 1);
+
+    let again: RepoCheck = client.call(check_url(&url, "other")).await.unwrap();
+    assert_eq!(
+        again,
+        RepoCheck::AlreadyAdded { name: "app".into() },
+        "by its remote"
+    );
+    shut_down(client).await;
+}
+
+#[tokio::test]
+async fn a_url_that_cant_be_cloned_says_why() {
+    let home = home();
+    let url = remote(home.path(), "app");
+    std::fs::create_dir_all(home.path().join("code/app")).unwrap();
+    let client = connect(home.path()).await;
+    let exists: RepoCheck = client.call(check_url(&url, "")).await.unwrap();
+    assert!(matches!(exists, RepoCheck::TargetExists { .. }));
+    let failed = client
+        .call::<protocol::Added>(Call::RepoAdd {
+            path: url.clone(),
+            name: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(
+        failed
+            .message
+            .ends_with("code/app already exists; name it something else")
+    );
+
+    let nowhere = format!("file://{}/remote/nope.git", home.path().display());
+    let missing: RepoCheck = client.call(check_url(&nowhere, "")).await.unwrap();
+    assert_eq!(missing, RepoCheck::NotFound);
+    let failed = client
+        .call::<protocol::Added>(Call::RepoAdd {
+            path: nowhere.clone(),
+            name: None,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(failed.message, format!("no repository at {nowhere}"));
+    shut_down(client).await;
+}

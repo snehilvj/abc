@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::warn;
 
+use abc_core::source::same_remote;
+
 use crate::git::{self, Listed};
 
 /// What abcd keeps between runs.
@@ -134,6 +136,65 @@ pub async fn check_folder(folder: &Path, saved: &Saved) -> RepoCheck {
         },
         Err(_) => RepoCheck::NotGit,
     }
+}
+
+/// How long git may take to reach a remote before abcd gives up on it.
+const REMOTE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// What adding git URL `url` would do, cloning it into `into` (written for
+/// people as `shown`), against what's already added.
+pub async fn check_url(url: &str, into: &Path, shown: &str, saved: &Saved) -> RepoCheck {
+    for added in &saved.repos {
+        if remotes(&added.path)
+            .await
+            .iter()
+            .any(|r| same_remote(r, url))
+        {
+            return RepoCheck::AlreadyAdded {
+                name: added.name.clone(),
+            };
+        }
+    }
+    if into.exists() {
+        return RepoCheck::TargetExists { into: shown.into() };
+    }
+    let mut reach = Command::new("git");
+    reach
+        .args(["ls-remote", "--heads", "--", url])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .kill_on_drop(true);
+    match tokio::time::timeout(REMOTE_TIMEOUT, run(reach)).await {
+        Ok(Ok(_)) => RepoCheck::Remote { into: shown.into() },
+        _ => RepoCheck::NotFound,
+    }
+}
+
+/// The URLs of a repository's remotes.
+async fn remotes(folder: &Path) -> Vec<String> {
+    let mut config = git_in(folder);
+    config.args(["config", "--get-regexp", r"^remote\..*\.url$"]);
+    let Ok(out) = run(config).await else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out)
+        .lines()
+        .filter_map(|line| line.split_once(' ').map(|(_, url)| url.to_string()))
+        .collect()
+}
+
+/// Clones `url` into `into`, making the folders above it as needed.
+pub async fn clone(url: &str, into: &Path) -> Result<(), String> {
+    if let Some(parent) = into.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("creating {}: {e}", parent.display()))?;
+    }
+    let mut clone = Command::new("git");
+    clone
+        .args(["clone", "--quiet", "--", url])
+        .arg(into)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .kill_on_drop(true);
+    run(clone).await.map(|_| ())
 }
 
 /// The name a repository gets unless one is given: its folder's, without `.git`.

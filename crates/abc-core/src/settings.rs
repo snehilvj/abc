@@ -216,6 +216,11 @@ impl Settings {
         Self::builder().env().file(file).load()
     }
 
+    /// Every setting at its default.
+    pub fn defaults() -> Self {
+        Self::builder().load().expect("every setting has a default")
+    }
+
     /// Defaults, then `file`, ignoring the environment.
     pub fn from_file(file: &Path) -> Result<Self, confique::Error> {
         Self::builder().file(file).load()
@@ -261,6 +266,7 @@ mod tests {
     fn without_a_file_everything_has_its_default() {
         let dir = tempfile::tempdir().unwrap();
         let settings = Settings::from_file(&dir.path().join("config.toml")).unwrap();
+        assert_eq!(settings.theme, Settings::defaults().theme);
         assert_eq!(settings.theme, "auto");
         assert_eq!(settings.add_repo.clone_dir, "~/code");
         assert_eq!(settings.sidebar.style, SidebarStyle::Detailed);

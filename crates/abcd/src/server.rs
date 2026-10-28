@@ -13,6 +13,7 @@ use abc_core::protocol::{
     Call, Done, ErrorCode, Failure, Hello, HelloLine, Repos, Request, Response, ServerStatus,
     encode,
 };
+use abc_core::settings::Settings;
 use anyhow::{Context as _, bail};
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -27,8 +28,6 @@ use crate::state::State;
 const SOCKET_CHECK: Duration = Duration::from_secs(1);
 /// How long abcd waits for another abcd of its profile to let go of the lock.
 const LOCK_WAIT: Duration = Duration::from_millis(500);
-/// How often abcd rescans repositories while anyone is subscribed (`git.status_interval`).
-const RESCAN: Duration = Duration::from_secs(5);
 
 /// What every connection shares.
 struct Server {
@@ -71,7 +70,18 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             Err(TryLockError::Error(e)) => return Err(e).context("locking the lock file"),
         }
     }
-    let _log = crate::log::start(&paths)?;
+    // A broken settings file mustn't stop abcd: it runs on the defaults and says why.
+    let (settings, broken) = match Settings::load(&paths.config_file()) {
+        Ok(settings) => (settings, None),
+        Err(e) => (
+            Settings::from_file(Path::new("")).expect("the defaults load"),
+            Some(e),
+        ),
+    };
+    let _log = crate::log::start(&paths, &settings.server.log)?;
+    if let Some(e) = broken {
+        warn!("{}; using the defaults", Settings::describe(&e));
+    }
 
     // Holding the lock, no other abcd owns a socket here: one left behind is stale.
     let socket = paths.socket();
@@ -80,7 +90,12 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
         .with_context(|| format!("listening on {}", socket.display()))?;
     info!(pid = std::process::id(), build, "abcd started");
     let home = std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from);
-    let state = State::load(paths.state_file(), home).await?;
+    let state = State::load(
+        paths.state_file(),
+        home,
+        settings.add_repo.clone_dir.clone(),
+    )
+    .await?;
 
     let server = Arc::new(Server {
         build,
@@ -98,7 +113,9 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
     // Handled, so closing the terminal that started abcd doesn't stop it.
     let mut hangup = signal(SignalKind::hangup())?;
     let mut check = tokio::time::interval(SOCKET_CHECK);
-    let mut rescan = tokio::time::interval(RESCAN);
+    // Worktrees made or removed outside abc, and repositories that went.
+    let mut rescan =
+        tokio::time::interval(Duration::from_secs(settings.git.status_interval.max(1)));
     let why = loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
@@ -114,7 +131,6 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             _ = check.tick() => if !socket.exists() {
                 break "its socket was removed";
             },
-            // Worktrees made or removed outside abc, and repositories that went.
             _ = rescan.tick() => if server.state.subscribers.load(Ordering::SeqCst) > 0 {
                 server.state.rescan().await;
             },

@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicUsize;
 
 use abc_core::model::{Repo, RepoCheck, RepoState};
 use abc_core::protocol::{self, Done, ErrorCode, Event, Failure, Repos};
+use abc_core::source::{self, is_url};
 use tokio::sync::{Mutex, broadcast};
 use tracing::{info, warn};
 
@@ -16,6 +17,8 @@ pub struct State {
     file: PathBuf,
     /// Where `~` and relative paths start.
     home: PathBuf,
+    /// Where git URLs are cloned (`add_repo.clone_dir`), as written.
+    clone_dir: String,
     inner: Mutex<Inner>,
     /// Changes, for every subscribed connection.
     pub events: broadcast::Sender<Event>,
@@ -38,13 +41,14 @@ fn failure(code: ErrorCode, message: impl Into<String>) -> Failure {
 
 impl State {
     /// Reads `file` and scans every repository in it.
-    pub async fn load(file: PathBuf, home: PathBuf) -> anyhow::Result<Self> {
+    pub async fn load(file: PathBuf, home: PathBuf, clone_dir: String) -> anyhow::Result<Self> {
         let saved = Saved::load(&file)?;
         let repos = scan_all(&saved).await;
         info!("{} repositories", repos.len());
         Ok(Self {
             file,
             home,
+            clone_dir,
             inner: Mutex::new(Inner { saved, repos }),
             events: broadcast::channel(64).0,
             subscribers: AtomicUsize::new(0),
@@ -75,20 +79,83 @@ impl State {
         })
     }
 
-    /// What adding `path` would do. The name matters only for a git URL.
-    pub async fn check(&self, path: &str, _name: &str) -> Result<RepoCheck, Failure> {
-        let folder = registry::expand(path, &self.home);
-        let inner = self.inner.lock().await;
-        Ok(registry::check_folder(&folder, &inner.saved).await)
+    /// What adding `path`, a folder or git URL, would do. For a URL, `name`
+    /// (or, if empty, the repository's) decides where it's cloned.
+    pub async fn check(&self, path: &str, name: &str) -> Result<RepoCheck, Failure> {
+        let saved = self.inner.lock().await.saved.clone();
+        if !is_url(path) {
+            let folder = registry::expand(path, &self.home);
+            return Ok(registry::check_folder(&folder, &saved).await);
+        }
+        let url = path.trim();
+        let name = self.url_name(url, Some(name))?;
+        let (into, shown) = self.clone_target(&name);
+        // No lock while git reaches the remote, which can take a while.
+        Ok(registry::check_url(url, &into, &shown, &saved).await)
     }
 
-    /// Adds the repository at `path` under `name`, or its folder's name.
+    /// The name a URL's repository is added under: `name` if given, else its own.
+    fn url_name(&self, url: &str, name: Option<&str>) -> Result<String, Failure> {
+        let name = match name.map(str::trim).filter(|n| !n.is_empty()) {
+            Some(name) => name,
+            None => source::default_name(url),
+        };
+        if name.is_empty() {
+            return Err(failure(ErrorCode::CantAdd, "a repository needs a name"));
+        }
+        Ok(name.to_string())
+    }
+
+    /// Where a repository named `name` is cloned, and how to show it.
+    fn clone_target(&self, name: &str) -> (PathBuf, String) {
+        let into = registry::expand(&self.clone_dir, &self.home).join(name);
+        let shown = format!("{}/{name}", self.clone_dir.trim_end_matches('/'));
+        (into, shown)
+    }
+
+    /// Adds the repository at `path` under `name`, or its own name. A git
+    /// URL is cloned into the clone folder first.
     pub async fn add(&self, path: &str, name: Option<String>) -> Result<protocol::Added, Failure> {
-        let shown = path.trim();
-        let folder = registry::expand(path, &self.home);
+        let cant = |message: String| failure(ErrorCode::CantAdd, message);
+        if !is_url(path) {
+            let folder = registry::expand(path, &self.home);
+            return self.add_folder(&folder, path.trim(), name).await;
+        }
+        let url = path.trim();
+        let name = self.url_name(url, name.as_deref())?;
+        if self.inner.lock().await.saved.named(&name).is_some() {
+            return Err(cant(format!("a repository is already named {name}")));
+        }
+        let (into, shown) = self.clone_target(&name);
+        match self.check(url, &name).await? {
+            RepoCheck::Remote { .. } => {}
+            RepoCheck::AlreadyAdded { name } => {
+                return Err(cant(format!("{url} is already added as {name}")));
+            }
+            RepoCheck::TargetExists { into } => {
+                return Err(cant(format!(
+                    "{into} already exists; name it something else"
+                )));
+            }
+            _ => return Err(cant(format!("no repository at {url}"))),
+        }
+        info!("cloning {url} into {}", into.display());
+        registry::clone(url, &into)
+            .await
+            .map_err(|why| cant(format!("couldn't clone {url}: {why}")))?;
+        self.add_folder(&into, &shown, Some(name)).await
+    }
+
+    /// Adds the repository `folder` is in (written for people as `shown`).
+    async fn add_folder(
+        &self,
+        folder: &Path,
+        shown: &str,
+        name: Option<String>,
+    ) -> Result<protocol::Added, Failure> {
         let mut inner = self.inner.lock().await;
         let cant = |message: String| failure(ErrorCode::CantAdd, message);
-        match registry::check_folder(&folder, &inner.saved).await {
+        match registry::check_folder(folder, &inner.saved).await {
             RepoCheck::Ready { .. } => {}
             RepoCheck::NotFound => return Err(cant(format!("{shown} doesn't exist"))),
             RepoCheck::AlreadyAdded { name } => {
@@ -96,7 +163,7 @@ impl State {
             }
             _ => return Err(cant(format!("{shown} is not a git repository"))),
         }
-        let (main, git_dir) = registry::resolve(&folder)
+        let (main, git_dir) = registry::resolve(folder)
             .await
             .ok_or_else(|| cant(format!("{shown} is not a git repository")))?;
         let name = match name.as_deref().map(str::trim) {

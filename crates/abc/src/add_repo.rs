@@ -142,19 +142,7 @@ impl AddRepo {
     }
 }
 
-/// A git URL, such as `https://github.com/owner/repo` or `git@github.com:owner/repo.git`.
-pub fn is_url(text: &str) -> bool {
-    text.contains("://") || text.starts_with("git@")
-}
-
-/// The last part of a folder or URL, without `.git`: `repo` for
-/// `git@github.com:owner/repo.git`. Nothing for `~` alone.
-pub fn default_name(text: &str) -> &str {
-    let text = text.trim().trim_end_matches('/');
-    let text = text.strip_suffix(".git").unwrap_or(text);
-    let name = text.rsplit(['/', ':']).next().unwrap_or("");
-    if name == "~" { "" } else { name }
-}
+pub use abc_core::source::{default_name, is_url};
 
 #[cfg(test)]
 mod tests {
