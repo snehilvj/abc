@@ -12,6 +12,8 @@ Set Padding 12
 Set TypingSpeed 120ms
 
 Hide
+# Give the shell time to start, or the first keys are lost.
+Sleep 1.5s
 Type "target/debug/abc gallery frame --theme dark"
 Enter
 Sleep 1.5s

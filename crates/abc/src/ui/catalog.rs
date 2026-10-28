@@ -117,3 +117,172 @@ fn column(buf: &mut Buffer, area: Rect, name: &str, theme: &Theme) {
         y += 1;
     }
 }
+
+/// File types as the explorer and switcher will show them, grouped.
+pub const FILES: &[(&str, &[&str])] = &[
+    (
+        "Code",
+        &[
+            "main.rs",
+            "index.ts",
+            "App.tsx",
+            "index.js",
+            "Button.jsx",
+            "app.py",
+            "main.go",
+            "app.rb",
+            "Main.java",
+            "Main.kt",
+            "App.swift",
+            "main.c",
+            "main.cpp",
+            "header.h",
+            "Program.cs",
+            "script.sh",
+            "init.lua",
+            "query.sql",
+        ],
+    ),
+    (
+        "Web",
+        &[
+            "index.html",
+            "styles.css",
+            "theme.scss",
+            "icon.svg",
+            "vite.config.ts",
+            ".eslintrc.json",
+            ".prettierrc",
+        ],
+    ),
+    (
+        "Config and data",
+        &[
+            "Cargo.toml",
+            "Cargo.lock",
+            "package.json",
+            "package-lock.json",
+            "tsconfig.json",
+            "pyproject.toml",
+            "requirements.txt",
+            "go.mod",
+            "Gemfile",
+            "config.yaml",
+            "settings.toml",
+            "data.json",
+            "data.csv",
+            "feed.xml",
+            ".env",
+        ],
+    ),
+    (
+        "Repo and build",
+        &[
+            ".gitignore",
+            ".gitattributes",
+            "Dockerfile",
+            "docker-compose.yml",
+            "Makefile",
+            "justfile",
+            "main.tf",
+            "LICENSE",
+        ],
+    ),
+    (
+        "Docs and media",
+        &[
+            "README.md",
+            "CHANGELOG.md",
+            "notes.txt",
+            "guide.pdf",
+            "logo.png",
+            "photo.jpg",
+            "demo.gif",
+            "video.mp4",
+            "archive.zip",
+            "backup.tar.gz",
+        ],
+    ),
+    ("Unknown type", &["data.xyz"]),
+];
+
+/// `abc gallery icons --state files`: every common file type with its icon and colour.
+pub fn draw_files(buf: &mut Buffer, area: Rect, theme: &Theme) {
+    let top = area.y + 1;
+    buf.set_string(
+        area.x + 2,
+        top,
+        "FILE ICONS",
+        theme.accent().add_modifier(Modifier::BOLD),
+    );
+    let dark = if theme.dark { "dark" } else { "light" };
+    buf.set_string(
+        area.x + 2,
+        top + 1,
+        format!("From devicons, in its {dark} colour set. Folders use the theme's folder colour."),
+        theme.dim(),
+    );
+    let column_width = area.width.saturating_sub(4) / 3;
+    let (mut col, mut y) = (0u16, top + 3);
+    let bottom = area.bottom().saturating_sub(1);
+    let mut put = |spans: Vec<Span>, col: &mut u16, y: &mut u16| {
+        if *y >= bottom {
+            *col += 1;
+            *y = top + 3;
+        }
+        let x = area.x + 2 + *col * column_width;
+        buf.set_line(x, *y, &Line::from(spans), column_width);
+        *y += 1;
+    };
+    let folder = theme.style(theme.folder);
+    put(
+        vec![Span::styled("Folders", theme.bold())],
+        &mut col,
+        &mut y,
+    );
+    put(
+        labelled(
+            icons::FOLDER,
+            folder,
+            "src",
+            folder.add_modifier(Modifier::BOLD),
+            theme,
+        ),
+        &mut col,
+        &mut y,
+    );
+    put(
+        labelled(
+            icons::FOLDER_OPEN,
+            folder,
+            "src (open)",
+            folder.add_modifier(Modifier::BOLD),
+            theme,
+        ),
+        &mut col,
+        &mut y,
+    );
+    y += 1;
+    for (group, names) in FILES {
+        if y + 2 >= bottom {
+            col += 1;
+            y = top + 3;
+        }
+        put(vec![Span::styled(*group, theme.bold())], &mut col, &mut y);
+        for name in *names {
+            let (icon, color) = icons::file(name, theme);
+            put(
+                labelled(
+                    icon.to_string(),
+                    theme.style(color),
+                    *name,
+                    theme.text(),
+                    theme,
+                ),
+                &mut col,
+                &mut y,
+            );
+        }
+        y += 1;
+    }
+}

@@ -1,0 +1,43 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+                                                                                                                        
+  FILE ICONS                                                                                                            
+  From devicons, in its dark colour set. Folders use the theme's folder colour.                                         
+                                                                                                                        
+  Folders                               Config and data                         video.mp4                              
+    src                                  Cargo.toml                           archive.zip                            
+    src (open)                           Cargo.lock                           backup.tar.gz                          
+                                          package.json                                                                 
+  Code                                    package-lock.json                  Unknown type                              
+    main.rs                              tsconfig.json                        data.xyz                               
+    index.ts                             pyproject.toml                                                               
+    App.tsx                            󰈙  requirements.txt                                                             
+    index.js                             go.mod                                                                       
+    Button.jsx                           Gemfile                                                                      
+    app.py                               config.yaml                                                                  
+    main.go                              settings.toml                                                                
+    app.rb                               data.json                                                                    
+    Main.java                            data.csv                                                                     
+    Main.kt                            󰗀  feed.xml                                                                     
+    App.swift                            .env                                                                         
+    main.c                                                                                                             
+    main.cpp                           Repo and build                                                                  
+    header.h                             .gitignore                                                                   
+  󰌛  Program.cs                           .gitattributes                                                               
+    script.sh                          󰡨  Dockerfile                                                                   
+    init.lua                           󰡨  docker-compose.yml                                                           
+    query.sql                            Makefile                                                                     
+                                          justfile                                                                     
+  Web                                     main.tf                                                                      
+    index.html                           LICENSE                                                                      
+    styles.css                                                                                                         
+    theme.scss                         Docs and media                                                                  
+  󰜡  icon.svg                             README.md                                                                    
+    vite.config.ts                       CHANGELOG.md                                                                 
+    .eslintrc.json                     󰈙  notes.txt                                                                    
+    .prettierrc                          guide.pdf                                                                    
+                                          logo.png                                                                     
+                                          photo.jpg                                                                    
+                                          demo.gif

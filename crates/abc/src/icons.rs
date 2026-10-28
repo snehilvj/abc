@@ -33,3 +33,58 @@ pub const INFO: &str = "\u{f449}";
 /// Starting, connecting or restarting.
 pub const SYNC: &str = "\u{f46a}";
 pub const DISCONNECTED: &str = "\u{f529}";
+
+/// A file whose type devicons doesn't know.
+pub const FILE: &str = "\u{f4a5}";
+pub const FOLDER: &str = "\u{e5ff}";
+pub const FOLDER_OPEN: &str = "\u{e5fe}";
+
+/// A file's icon and colour, by its name, from devicons (light or dark set).
+///
+/// devicons checks whether a name it doesn't know is a directory on disk. abc's
+/// client never reads the disk, so the name goes behind a path that can't
+/// exist: a NUL byte makes the check fail before any system call is made.
+pub fn file(name: &str, theme: &crate::theme::Theme) -> (char, ratatui::style::Color) {
+    let path = std::path::Path::new("\0").join(name);
+    let set = if theme.dark {
+        devicons::Theme::Dark
+    } else {
+        devicons::Theme::Light
+    };
+    let icon = devicons::icon_for_file(path.as_path(), &Some(set));
+    // devicons answers an unknown type with a plain `*`; abc draws a file icon.
+    if icon.icon == '*' {
+        return (FILE.chars().next().expect("a glyph"), theme.dim);
+    }
+    let hex = u32::from_str_radix(icon.color.trim_start_matches('#'), 16).unwrap_or(0x7e8ea8);
+    let color = ratatui::style::Color::Rgb((hex >> 16) as u8, (hex >> 8) as u8, hex as u8);
+    (icon.icon, color)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::theme::Theme;
+
+    #[test]
+    fn file_icons_come_from_the_name_and_extension() {
+        let dark = Theme::dark();
+        assert_ne!(file("verify.ts", &dark).0, file("main.rs", &dark).0);
+        assert_eq!(file("Dockerfile", &dark).0, file("dockerfile", &dark).0);
+    }
+
+    #[test]
+    fn a_name_is_never_checked_against_the_disk() {
+        // `src` is a real folder where the tests run; looked up by name it is
+        // an unknown file, never devicons' folder icon.
+        assert!(std::path::Path::new("src").is_dir());
+        assert_ne!(file("src", &Theme::dark()).0, '\u{f115}');
+    }
+
+    #[test]
+    fn light_and_dark_themes_get_their_own_colours() {
+        let (_, dark) = file("README.md", &Theme::dark());
+        let (_, light) = file("README.md", &Theme::light());
+        assert_ne!(dark, light);
+    }
+}

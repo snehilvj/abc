@@ -7,8 +7,9 @@
 //!
 //!     cargo run -q -p abc --example export_screens > target/screens.tsv
 //!
-//! Besides the gallery states it exports `base` states: the populated frame
-//! with each pane focused, for mockups of screens not built yet.
+//! Besides the gallery states it exports `base` states (the populated frame
+//! with each pane focused) and `icon` lines (file icons in both colour sets),
+//! for mockups of screens not built yet.
 
 use abc::app::{App, Focus};
 use abc::gallery::{self, Screen};
@@ -92,5 +93,41 @@ fn main() {
             abc::ui::catalog::draw(frame.buffer_mut(), area, &theme);
         })
         .expect("drawing");
-    dump("icons", "gap 1 and 2", terminal.backend().buffer());
+    dump("icons", "system", terminal.backend().buffer());
+    terminal
+        .draw(|frame| {
+            let area = frame.area();
+            abc::ui::catalog::draw_files(frame.buffer_mut(), area, &theme);
+        })
+        .expect("drawing");
+    dump("icons", "files", terminal.backend().buffer());
+
+    // File icons for the page's mockups, in both colour sets:
+    // `icon <name> <glyph> <dark colour> <light colour>`.
+    let light = Theme::light();
+    let mockups = [
+        "client.ts",
+        "verify.ts",
+        "score.py",
+        "verifier.py",
+        "text.ts",
+        "main.tsx",
+        "dump.sql",
+        "gst.md",
+        "logo.png",
+        "rows.rs",
+        ".gitignore",
+        "package.json",
+        "README.md",
+        "tsconfig.json",
+        "verify-gst.tsx",
+    ];
+    let catalogue = abc::ui::catalog::FILES
+        .iter()
+        .flat_map(|(_, names)| names.iter().copied());
+    for name in mockups.into_iter().chain(catalogue) {
+        let (glyph, dark) = abc::icons::file(name, &theme);
+        let (_, light) = abc::icons::file(name, &light);
+        println!("icon\t{name}\t{glyph}\t{}\t{}", color(dark), color(light));
+    }
 }

@@ -41,6 +41,15 @@ fn frame() {
 }
 
 #[test]
+fn file_icons() {
+    let screen = draw(120, 40, |frame| {
+        let area = frame.area();
+        abc::ui::catalog::draw_files(frame.buffer_mut(), area, &Theme::dark());
+    });
+    insta::assert_snapshot!("icons-files", screen);
+}
+
+#[test]
 fn icons() {
     let screen = draw(120, 40, |frame| {
         let area = frame.area();

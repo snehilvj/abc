@@ -21,7 +21,7 @@ pub const BADGE_GAP: usize = 2;
 
 /// An icon, the gap, and its label.
 pub fn labelled<'a>(
-    icon: &'static str,
+    icon: impl Into<Cow<'a, str>>,
     icon_style: Style,
     label: impl Into<Cow<'a, str>>,
     label_style: Style,
@@ -36,7 +36,7 @@ pub fn labelled<'a>(
 
 /// An icon and its label in one colour.
 pub fn badge<'a>(
-    icon: &'static str,
+    icon: impl Into<Cow<'a, str>>,
     label: impl Into<Cow<'a, str>>,
     color: Color,
     theme: &Theme,

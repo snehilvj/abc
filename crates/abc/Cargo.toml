@@ -13,6 +13,7 @@ anyhow.workspace = true
 clap.workspace = true
 crokey.workspace = true
 crossterm.workspace = true
+devicons.workspace = true
 ratatui.workspace = true
 terminal-colorsaurus.workspace = true
 

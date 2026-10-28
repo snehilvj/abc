@@ -35,6 +35,9 @@ pub struct Theme {
     pub pr_draft: Color,
     pub pr_merged: Color,
     pub pr_closed: Color,
+    pub folder: Color,
+    /// Dark or light, for colours that come in two sets (file icons).
+    pub dark: bool,
     /// Blank cells between an icon and its label. Terminals that draw Nerd Font
     /// glyphs into the next cell need 2; the rest look right with 1.
     pub icon_gap: usize,
@@ -63,6 +66,8 @@ impl Theme {
             pr_draft: rgb(0x7c8894),
             pr_merged: rgb(0xb18cf0),
             pr_closed: rgb(0xec716b),
+            folder: rgb(0x6ea9f0),
+            dark: true,
             icon_gap: 2,
         }
     }
@@ -85,6 +90,8 @@ impl Theme {
             pr_draft: rgb(0x77828c),
             pr_merged: rgb(0x7546c4),
             pr_closed: rgb(0xc0362c),
+            folder: rgb(0x1f63c4),
+            dark: false,
             icon_gap: 2,
         }
     }
@@ -107,6 +114,8 @@ impl Theme {
             pr_draft: Color::DarkGray,
             pr_merged: Color::Magenta,
             pr_closed: Color::Red,
+            folder: Color::Blue,
+            dark: true,
             icon_gap: 2,
         }
     }

@@ -172,7 +172,7 @@ pub fn frame() -> Vec<Preset> {
 pub fn run(args: Args) -> Result<()> {
     match args.screen {
         Screen::Panic => return run_panic(),
-        Screen::Icons => return run_catalog(Theme::resolve(args.theme)),
+        Screen::Icons => return run_catalog(args.state.as_deref(), Theme::resolve(args.theme)),
         Screen::Frame => {}
     }
     let presets = presets(args.screen);
@@ -245,20 +245,44 @@ fn set_title(screen: Screen, state: &str) {
     );
 }
 
-fn run_catalog(theme: Theme) -> Result<()> {
+/// The icon catalogue's states: the icon system, and file types.
+pub const ICON_STATES: [&str; 2] = ["system", "files"];
+
+fn run_catalog(state: Option<&str>, theme: Theme) -> Result<()> {
+    let mut index = match state {
+        None => 0,
+        Some(state) => ICON_STATES
+            .iter()
+            .position(|s| *s == state)
+            .ok_or_else(|| {
+                anyhow!(
+                    "no state {state:?}; the states are: {}",
+                    ICON_STATES.join(", ")
+                )
+            })?,
+    };
     let mut terminal = ratatui::try_init().context("setting up the terminal")?;
-    set_title(Screen::Icons, "gap 1 and 2");
     let result = (|| -> Result<()> {
         loop {
+            set_title(Screen::Icons, ICON_STATES[index]);
             terminal.draw(|frame| {
                 let area = frame.area();
-                ui::catalog::draw(frame.buffer_mut(), area, &theme);
+                match ICON_STATES[index] {
+                    "files" => ui::catalog::draw_files(frame.buffer_mut(), area, &theme),
+                    _ => ui::catalog::draw(frame.buffer_mut(), area, &theme),
+                }
             })?;
-            if let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press
-                && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
-            {
-                return Ok(());
+            let Event::Key(key) = event::read()? else {
+                continue;
+            };
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                KeyCode::Char(']') => index = (index + 1) % ICON_STATES.len(),
+                KeyCode::Char('[') => index = (index + ICON_STATES.len() - 1) % ICON_STATES.len(),
+                _ => {}
             }
         }
     })();
