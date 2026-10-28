@@ -6,7 +6,7 @@ use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use abc_core::paths::Paths;
 use abc_core::protocol::{
@@ -21,6 +21,8 @@ use tracing::{info, warn};
 
 /// How often abcd checks its socket is still there.
 const SOCKET_CHECK: Duration = Duration::from_secs(1);
+/// How long abcd waits for another abcd of its profile to let go of the lock.
+const LOCK_WAIT: Duration = Duration::from_millis(500);
 
 /// What every connection shares.
 struct Server {
@@ -46,13 +48,20 @@ pub async fn run(paths: Paths, build: String) -> anyhow::Result<()> {
         .write(true)
         .open(paths.lock())
         .context("opening the lock file")?;
-    match lock.try_lock() {
-        Ok(()) => {}
-        Err(TryLockError::WouldBlock) => bail!(
-            "abcd is already running for profile {}",
-            paths.profile.name()
-        ),
-        Err(TryLockError::Error(e)) => return Err(e).context("locking the lock file"),
+    // A restart starts the new abcd as the old one exits: give it a moment.
+    let deadline = Instant::now() + LOCK_WAIT;
+    loop {
+        match lock.try_lock() {
+            Ok(()) => break,
+            Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(TryLockError::WouldBlock) => bail!(
+                "abcd is already running for profile {}",
+                paths.profile.name()
+            ),
+            Err(TryLockError::Error(e)) => return Err(e).context("locking the lock file"),
+        }
     }
     let _log = crate::log::start(&paths)?;
 

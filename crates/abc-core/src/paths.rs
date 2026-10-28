@@ -6,7 +6,7 @@
 //! `~/.local/state`, on macOS too. Profiles share nothing.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The profile used when neither `--profile` nor `ABC_PROFILE` names one.
 pub const DEFAULT_PROFILE: &str = "stable";
@@ -112,6 +112,22 @@ impl Paths {
         Self::new(profile, |var| std::env::var_os(var))
     }
 
+    /// The folder holding every profile's settings, as `XDG_CONFIG_HOME` would name it.
+    pub fn config_home(&self) -> &Path {
+        self.config_dir
+            .ancestors()
+            .nth(2)
+            .expect("built as <home>/abc/<profile>")
+    }
+
+    /// The folder holding every profile's state, as `XDG_STATE_HOME` would name it.
+    pub fn state_home(&self) -> &Path {
+        self.state_dir
+            .ancestors()
+            .nth(2)
+            .expect("built as <home>/abc/<profile>")
+    }
+
     pub fn config_file(&self) -> PathBuf {
         self.config_dir.join("config.toml")
     }
@@ -191,6 +207,8 @@ mod tests {
             PathBuf::from("/x/config/abc/dev/config.toml")
         );
         assert_eq!(paths.socket(), PathBuf::from("/x/state/abc/dev/abcd.sock"));
+        assert_eq!(paths.state_home(), Path::new("/x/state"));
+        assert_eq!(paths.config_home(), Path::new("/x/config"));
 
         let home = Paths::new(dev(), env(&[("HOME", "/home/me")])).unwrap();
         assert_eq!(home.config_dir, PathBuf::from("/home/me/.config/abc/dev"));
