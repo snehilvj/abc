@@ -199,6 +199,9 @@ pub struct Github {
     /// Seconds between refreshes of pull request status.
     #[config(default = 60)]
     pub pr_interval: u64,
+    /// The gh command, if it isn't on PATH as gh.
+    #[config(default = "gh")]
+    pub gh: String,
 }
 
 /// abcd, the background server.

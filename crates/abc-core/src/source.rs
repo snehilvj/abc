@@ -22,6 +22,15 @@ pub fn same_remote(a: &str, b: &str) -> bool {
     remote_key(a) == remote_key(b)
 }
 
+/// Who owns the repository at a remote URL: `privue` for
+/// `git@github.com:privue/ecourts.git`.
+pub fn owner(url: &str) -> Option<String> {
+    let key = remote_key(url);
+    let mut parts = key.rsplit('/');
+    parts.next()?;
+    parts.next().filter(|o| !o.is_empty()).map(String::from)
+}
+
 /// A remote reduced to host and path, lower-cased: `github.com/o/r`.
 fn remote_key(url: &str) -> String {
     let url = url.trim();
@@ -61,6 +70,16 @@ mod tests {
         }
         assert!(!same_remote(https, "https://github.com/privue/notes"));
         assert!(same_remote("file:///srv/app.git", "/srv/app"));
+    }
+
+    #[test]
+    fn the_owner_is_read_from_the_url() {
+        assert_eq!(
+            owner("git@github.com:Privue/ecourts.git").as_deref(),
+            Some("privue")
+        );
+        assert_eq!(owner("https://github.com/cli/cli").as_deref(), Some("cli"));
+        assert_eq!(owner("ecourts"), None);
     }
 
     #[test]

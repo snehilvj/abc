@@ -182,6 +182,14 @@ async fn remotes(folder: &Path) -> Vec<String> {
         .collect()
 }
 
+/// The URL of a repository's `origin` remote, if it has one.
+pub async fn origin(folder: &Path) -> Option<String> {
+    let mut url = git_in(folder);
+    url.args(["remote", "get-url", "origin"]);
+    let out = run(url).await.ok()?;
+    Some(String::from_utf8_lossy(&out).trim().to_string()).filter(|u| !u.is_empty())
+}
+
 /// Clones `url` into `into`, making the folders above it as needed.
 pub async fn clone(url: &str, into: &Path) -> Result<(), String> {
     if let Some(parent) = into.parent() {

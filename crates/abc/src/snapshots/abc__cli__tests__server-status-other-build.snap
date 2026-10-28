@@ -8,3 +8,5 @@ abcd is running · profile dev
   protocol  1
   uptime    45s
   socket    ~/.local/state/abc/dev/abcd.sock
+  repos     3 (7 worktrees)
+  github    gh is not logged in · PR status is off · run gh auth login

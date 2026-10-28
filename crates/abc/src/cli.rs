@@ -12,7 +12,7 @@ use abc_core::build::BUILD_ID;
 use abc_core::client::{self, Client};
 use abc_core::model::Repo;
 use abc_core::paths::Paths;
-use abc_core::protocol::{self, Call, Repos, ServerStatus};
+use abc_core::protocol::{self, Call, Github, Repos, ServerStatus};
 use abc_core::settings::Settings;
 use anyhow::Context as _;
 
@@ -277,12 +277,31 @@ pub fn status_text(status: &ServerStatus, protocol: u32, socket: &str, now: u64)
         ("protocol", protocol.to_string()),
         ("uptime", uptime),
         ("socket", socket.to_string()),
+        (
+            "repos",
+            format!(
+                "{} ({})",
+                status.repos,
+                crate::app::plural(status.worktrees, "worktree")
+            ),
+        ),
+        ("github", github_text(&status.github)),
     ];
     let mut text = format!("abcd is running · profile {}\n", status.profile);
     for (label, value) in rows {
         text.push_str(&format!("  {label:<9} {value}\n"));
     }
     text
+}
+
+/// How pull request status stands, for `abc server status`.
+fn github_text(github: &Github) -> String {
+    match github {
+        Github::On { login } => format!("gh logged in as {login}"),
+        Github::Off { why } => why.clone(),
+        Github::Disabled => "off (github.enabled = false)".into(),
+        Github::Unknown => "not asked yet: abcd asks once abc is open".into(),
+    }
 }
 
 /// "45s", "12m", "2h 14m", "3d 2h".
@@ -432,11 +451,19 @@ mod tests {
             profile: "dev".into(),
             started: 1_000,
             clients: 2,
+            repos: 3,
+            worktrees: 7,
+            github: Github::On {
+                login: "snehilvj".into(),
+            },
         };
         let socket = "~/.local/state/abc/dev/abcd.sock";
         let same = status_text(&status, 1, socket, 1_000 + 2 * 3600 + 14 * 60);
         insta::assert_snapshot!("server-status", same.replace(BUILD_ID, "0.1.0+3f9a2c1e"));
         status.build = "0.0.9+0ddba11".into();
+        status.github = Github::Off {
+            why: "gh is not logged in · PR status is off · run gh auth login".into(),
+        };
         let other = status_text(&status, 1, socket, 1_045);
         insta::assert_snapshot!(
             "server-status-other-build",

@@ -93,12 +93,7 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
         .with_context(|| format!("listening on {}", socket.display()))?;
     info!(pid = std::process::id(), build, "abcd started");
     let home = std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from);
-    let state = State::load(
-        paths.state_file(),
-        home,
-        settings.add_repo.clone_dir.clone(),
-    )
-    .await?;
+    let state = State::load(paths.state_file(), home, &settings).await?;
 
     let server = Arc::new(Server {
         build,
@@ -135,8 +130,13 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             _ = check.tick() => if !socket.exists() {
                 break "its socket was removed";
             },
+            // Off the accept loop: gh can take a while.
             _ = rescan.tick() => if server.state.subscribers.load(Ordering::SeqCst) > 0 {
-                server.state.rescan().await;
+                let server = server.clone();
+                tokio::spawn(async move {
+                    server.state.rescan().await;
+                    server.state.fetch_prs_if_due().await;
+                });
             },
         }
     };
@@ -318,16 +318,22 @@ async fn answer(server: &Server, request: Request) -> Response {
     let id = request.id;
     let state = &server.state;
     match request.call {
-        Call::ServerStatus => Response::ok(
-            id,
-            &ServerStatus {
-                pid: std::process::id(),
-                build: server.build.clone(),
-                profile: server.profile.clone(),
-                started: server.started,
-                clients: server.clients.load(Ordering::SeqCst),
-            },
-        ),
+        Call::ServerStatus => {
+            let (repos, worktrees, github) = state.summary().await;
+            Response::ok(
+                id,
+                &ServerStatus {
+                    pid: std::process::id(),
+                    build: server.build.clone(),
+                    profile: server.profile.clone(),
+                    started: server.started,
+                    clients: server.clients.load(Ordering::SeqCst),
+                    repos,
+                    worktrees,
+                    github,
+                },
+            )
+        }
         Call::ServerShutdown | Call::Subscribe => Response::ok(id, &Done {}),
         Call::RepoList => Response::ok(
             id,

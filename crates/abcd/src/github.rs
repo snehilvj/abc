@@ -120,10 +120,11 @@ pub fn pick<'a>(prs: &'a [BranchPr], branch: &str, own: Option<&str>) -> Option<
     prs.iter()
         .filter(|p| p.branch == branch)
         .max_by_key(|p| {
-            (
-                own.is_some() && p.owner.as_deref() == own,
-                p.updated.as_str(),
-            )
+            let own = match (own, &p.owner) {
+                (Some(own), Some(owner)) => own.eq_ignore_ascii_case(owner),
+                _ => false,
+            };
+            (own, p.updated.as_str())
         })
         .map(|p| &p.pr)
 }

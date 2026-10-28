@@ -1,16 +1,24 @@
 //! abcd's state: the registry and the repositories as last scanned, shared by
 //! every connection, and the changes pushed to those that subscribed.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use abc_core::model::{Repo, RepoCheck, RepoState};
-use abc_core::protocol::{self, Done, ErrorCode, Event, Failure, Repos};
+use abc_core::protocol::{self, Done, ErrorCode, Event, Failure, Github, Repos};
+use abc_core::settings::{self, Settings};
 use abc_core::source::{self, is_url};
+use tokio::process::Command;
 use tokio::sync::{Mutex, broadcast};
 use tracing::{info, warn};
 
+use crate::github::{self, BranchPr};
 use crate::registry::{self, Added, Saved};
+
+/// How long gh may take before abcd gives up on it this time round.
+const GH_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub struct State {
     /// `state.json`.
@@ -19,6 +27,10 @@ pub struct State {
     home: PathBuf,
     /// Where git URLs are cloned (`add_repo.clone_dir`), as written.
     clone_dir: String,
+    /// The `github` settings.
+    github: settings::Github,
+    /// Set while pull requests are being fetched, so fetches never overlap.
+    fetching: AtomicBool,
     inner: Mutex<Inner>,
     /// Changes, for every subscribed connection.
     pub events: broadcast::Sender<Event>,
@@ -28,8 +40,35 @@ pub struct State {
 
 struct Inner {
     saved: Saved,
-    /// As last scanned, in the order added.
+    /// As last scanned, in the order added, pull requests attached.
     repos: Vec<Repo>,
+    /// Each repository's pull requests, as gh last listed them.
+    prs: HashMap<String, Vec<BranchPr>>,
+    /// Who owns each repository's origin, to prefer its pull requests over forks'.
+    owners: HashMap<String, Option<String>>,
+    github: Github,
+    /// When pull requests were last fetched; none means as soon as anyone watches.
+    fetched: Option<Instant>,
+}
+
+impl Inner {
+    /// Gives every worktree its branch's pull request, or none.
+    fn attach(&self, repos: &mut [Repo]) {
+        for repo in repos {
+            let prs = self.prs.get(&repo.name).map_or(&[][..], Vec::as_slice);
+            let owner = self.owners.get(&repo.name).cloned().flatten();
+            if let RepoState::Present { worktrees } = &mut repo.state {
+                for worktree in worktrees {
+                    worktree.pr = match &worktree.head {
+                        abc_core::model::Head::Branch(branch) => {
+                            github::pick(prs, branch, owner.as_deref()).cloned()
+                        }
+                        abc_core::model::Head::Detached(_) => None,
+                    };
+                }
+            }
+        }
+    }
 }
 
 fn failure(code: ErrorCode, message: impl Into<String>) -> Failure {
@@ -41,24 +80,41 @@ fn failure(code: ErrorCode, message: impl Into<String>) -> Failure {
 
 impl State {
     /// Reads `file` and scans every repository in it.
-    pub async fn load(file: PathBuf, home: PathBuf, clone_dir: String) -> anyhow::Result<Self> {
+    pub async fn load(file: PathBuf, home: PathBuf, settings: &Settings) -> anyhow::Result<Self> {
         let saved = Saved::load(&file)?;
         let repos = scan_all(&saved).await;
         info!("{} repositories", repos.len());
         Ok(Self {
             file,
             home,
-            clone_dir,
-            inner: Mutex::new(Inner { saved, repos }),
+            clone_dir: settings.add_repo.clone_dir.clone(),
+            github: settings.github.clone(),
+            fetching: AtomicBool::new(false),
+            inner: Mutex::new(Inner {
+                saved,
+                repos,
+                prs: HashMap::new(),
+                owners: HashMap::new(),
+                github: Github::Unknown,
+                fetched: None,
+            }),
             events: broadcast::channel(64).0,
             subscribers: AtomicUsize::new(0),
         })
     }
 
+    /// How many repositories and worktrees, and whether GitHub is on.
+    pub async fn summary(&self) -> (usize, usize, Github) {
+        let inner = self.inner.lock().await;
+        let worktrees = inner.repos.iter().map(|r| r.worktrees().len()).sum();
+        (inner.repos.len(), worktrees, inner.github.clone())
+    }
+
     /// Scans again, telling subscribers if anything changed.
     pub async fn rescan(&self) -> Vec<Repo> {
         let mut inner = self.inner.lock().await;
-        let repos = scan_all(&inner.saved).await;
+        let mut repos = scan_all(&inner.saved).await;
+        inner.attach(&mut repos);
         if repos != inner.repos {
             inner.repos = repos;
             self.changed(&inner);
@@ -188,6 +244,8 @@ impl State {
         info!("added {name} at {}", added.path.display());
         inner.saved = saved;
         inner.repos.push(repo);
+        // Its pull requests, at the next chance.
+        inner.fetched = None;
         self.changed(&inner);
         Ok(protocol::Added {
             name,
@@ -217,6 +275,8 @@ impl State {
         info!("removed {name}");
         inner.saved = saved;
         inner.repos.retain(|r| r.name != name);
+        inner.prs.remove(name);
+        inner.owners.remove(name);
         self.changed(&inner);
         Ok(Repos {
             repos: inner.repos.clone(),
@@ -259,6 +319,119 @@ impl State {
         self.changed(&inner);
         Ok(Done {})
     }
+}
+
+impl State {
+    /// Fetches pull requests if `github.pr_interval` has passed since the
+    /// last fetch, or there hasn't been one, and no fetch is running.
+    pub async fn fetch_prs_if_due(&self) {
+        let interval = Duration::from_secs(self.github.pr_interval);
+        let due = match self.inner.lock().await.fetched {
+            Some(at) => at.elapsed() >= interval,
+            None => true,
+        };
+        if !due || self.fetching.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        self.fetch_prs().await;
+        self.fetching.store(false, Ordering::SeqCst);
+    }
+
+    /// Asks gh for every repository's pull requests. A repository gh fails
+    /// on keeps what it had; gh missing or signed out turns them all off.
+    async fn fetch_prs(&self) {
+        let github = if self.github.enabled {
+            gh_login(&self.github.gh).await
+        } else {
+            Github::Disabled
+        };
+        let present: Vec<(String, PathBuf)> = {
+            let inner = self.inner.lock().await;
+            inner
+                .repos
+                .iter()
+                .filter(|r| !r.is_missing())
+                .map(|r| (r.name.clone(), r.path.clone()))
+                .collect()
+        };
+        let mut fetched = HashMap::new();
+        let mut owners = HashMap::new();
+        if matches!(github, Github::On { .. }) {
+            for (name, path) in present {
+                let origin = registry::origin(&path).await;
+                owners.insert(name.clone(), origin.as_deref().and_then(source::owner));
+                match gh_prs(&self.github.gh, &path).await {
+                    Ok(prs) => {
+                        fetched.insert(name, prs);
+                    }
+                    Err(why) => warn!("listing {name}'s pull requests: {why}"),
+                }
+            }
+        }
+        let mut inner = self.inner.lock().await;
+        if matches!(github, Github::On { .. }) {
+            for (name, prs) in std::mem::take(&mut inner.prs) {
+                fetched.entry(name).or_insert(prs);
+            }
+        } else if inner.github != github {
+            info!("pull request status: {github:?}");
+        }
+        inner.prs = fetched;
+        inner.owners = owners;
+        inner.github = github;
+        inner.fetched = Some(Instant::now());
+        let mut repos = inner.repos.clone();
+        inner.attach(&mut repos);
+        if repos != inner.repos {
+            inner.repos = repos;
+            self.changed(&inner);
+        }
+    }
+}
+
+/// Whether gh is installed and signed in, and as whom.
+async fn gh_login(gh: &str) -> Github {
+    let off = |why: &str| Github::Off { why: why.into() };
+    let mut status = Command::new(gh);
+    status
+        .args(["auth", "status", "--json", "hosts"])
+        .kill_on_drop(true);
+    let out = match tokio::time::timeout(GH_TIMEOUT, status.output()).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
+            return off("gh isn't installed · PR status is off");
+        }
+        _ => return off("gh didn't answer · PR status is off for now"),
+    };
+    match github::parse_login(&out.stdout) {
+        Some(login) => Github::On { login },
+        None => off("gh is not logged in · PR status is off · run gh auth login"),
+    }
+}
+
+/// A repository's pull requests, as gh lists them.
+async fn gh_prs(gh: &str, repo: &Path) -> Result<Vec<BranchPr>, String> {
+    let mut list = Command::new(gh);
+    list.args([
+        "pr",
+        "list",
+        "--state",
+        "all",
+        "--limit",
+        "100",
+        "--json",
+        github::FIELDS,
+    ])
+    .current_dir(repo)
+    .kill_on_drop(true);
+    let out = tokio::time::timeout(GH_TIMEOUT, list.output())
+        .await
+        .map_err(|_| "gh took too long".to_string())?
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
+    }
+    github::parse_prs(&out.stdout)
 }
 
 async fn scan_all(saved: &Saved) -> Vec<Repo> {

@@ -8,3 +8,5 @@ abcd is running · profile dev
   protocol  1
   uptime    2h 14m
   socket    ~/.local/state/abc/dev/abcd.sock
+  repos     3 (7 worktrees)
+  github    gh logged in as snehilvj

@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::{FoundFile, Repo};
 
 /// Bumped on any change to the messages after `hello`.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 /// The first line each way: `{"hello": {...}}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,6 +191,23 @@ pub struct ServerStatus {
     pub started: u64,
     /// Connections open now, this one included.
     pub clients: usize,
+    pub repos: usize,
+    pub worktrees: usize,
+    pub github: Github,
+}
+
+/// Whether abcd is getting pull request status from GitHub.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Github {
+    /// Not asked yet: abcd asks once a client is watching.
+    Unknown,
+    /// gh is signed in as `login`.
+    On { login: String },
+    /// Turned off with `github.enabled = false`.
+    Disabled,
+    /// gh is missing or signed out: why, and what to do about it.
+    Off { why: String },
 }
 
 /// Every repository, as they are now.
