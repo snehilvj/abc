@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
+│  WORKTREES                           │ Code                                                                          │
+│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   generated/rows.rs · rust ──────────┤
+│    gst-check               #142   │   .github                           │  9967  pub const ROW_9967: u32 = 9967; │
+│       feat/gst-check      3    2  │   apps                              │  9968  pub const ROW_9968: u32 = 9968; │
+│     gst-rounding            #139   │   data                              │  9969  pub const ROW_9969: u32 = 9969; │
+│       fix/gst-rounding          1  │   docs                              │  9970  pub const ROW_9970: u32 = 9970; │
+│     ledger-round            #141    │   generated                         │  9971  pub const ROW_9971: u32 = 9971; │
+│       fix/ledger-round    1        │     rows.rs                         │  9972  pub const ROW_9972: u32 = 9972; │
+│       privue-platform               │   packages                          │  9973  pub const ROW_9973: u32 = 9973; │
+│       main                          │     integrations                    │  9974  pub const ROW_9974: u32 = 9974; │
+│                                      │       gst                           │  9975  pub const ROW_9975: u32 = 9975; │
+│    ecourts                          │         client.ts                   │  9976  pub const ROW_9976: u32 = 9976; │
+│     gst-lookup               #88   │         verify.ts                   │  9977  pub const ROW_9977: u32 = 9977; │
+│       feat/gst-lookup           4  │     scoring                         │  9978  pub const ROW_9978: u32 = 9978; │
+│     ocr-retry                        │     shared                          │  9979  pub const ROW_9979: u32 = 9979; │
+│       feat/ocr-retry      7  local │   .gitignore                        │  9980  pub const ROW_9980: u32 = 9980; │
+│       ecourts                       │   package.json                      │  9981  pub const ROW_9981: u32 = 9981; │
+│       main                      3  │   README.md                         │  9982  pub const ROW_9982: u32 = 9982; │
+│                                      │   tsconfig.json                     │  9983  pub const ROW_9983: u32 = 9983; │
+│                                      │                                      │  9984  pub const ROW_9984: u32 = 9984; │
+│                                      │                                      │  9985  pub const ROW_9985: u32 = 9985; │
+│                                      │                                      │  9986  pub const ROW_9986: u32 = 9986; │
+│                                      │                                      │  9987  pub const ROW_9987: u32 = 9987; │
+│                                      │                                      │  9988  pub const ROW_9988: u32 = 9988; │
+│                                      │                                      │  9989  pub const ROW_9989: u32 = 9989; │
+│                                      │                                      │  9990  pub const ROW_9990: u32 = 9990; │
+│                                      │                                      │  9991  pub const ROW_9991: u32 = 9991; │
+│                                      │                                      │  9992  pub const ROW_9992: u32 = 9992; │
+│                                      │                                      │  9993  pub const ROW_9993: u32 = 9993; │
+│                                      │                                      │  9994  pub const ROW_9994: u32 = 9994; │
+│                                      │                                      │  9995  pub const ROW_9995: u32 = 9995; │
+│                                      │                                      │  9996  pub const ROW_9996: u32 = 9996; │
+│                                      │                                      │  9997  pub const ROW_9997: u32 = 9997; │
+│                                      │                                      │  9998  pub const ROW_9998: u32 = 9998; │
+│                                      │                                      │  9999  pub const ROW_9999: u32 = 9999; │
+│                                      │                                      │ 10000  pub const ROW_10000: u32 = 100… │
+├──────────────────────────────────────┴──────────────────────────────────────┴──── 10,000:1 · 9,967–10,000 of 10,000 ─┤
+│ h j k l move · w b e words · / n find · v V select · : line · esc explorer · space commands · ? help · q quit        │
+└─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘

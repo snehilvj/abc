@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
+│  WORKTREES                           │ Code                                                                          │
+│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   data/dump.sql · plain ─────────────┤
+│    gst-check               #142   │   .github                           │   Too large to show · 12.4 MB         │
+│       feat/gst-check      3    2  │   apps                              │                                        │
+│     gst-rounding            #139   │   data                              │ The limit is 5.0 MB.                   │
+│       fix/gst-rounding          1  │     dump.sql                        │                                        │
+│     ledger-round            #141    │   docs                              │                                        │
+│       fix/ledger-round    1        │   generated                         │                                        │
+│       privue-platform               │   packages                          │                                        │
+│       main                          │     integrations                    │                                        │
+│                                      │       gst                           │                                        │
+│    ecourts                          │         client.ts                   │                                        │
+│     gst-lookup               #88   │         verify.ts                   │                                        │
+│       feat/gst-lookup           4  │     scoring                         │                                        │
+│     ocr-retry                        │     shared                          │                                        │
+│       feat/ocr-retry      7  local │   .gitignore                        │                                        │
+│       ecourts                       │   package.json                      │                                        │
+│       main                      3  │   README.md                         │                                        │
+│                                      │   tsconfig.json                     │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+├──────────────────────────────────────┴──────────────────────────────────────┴────────────────────────────────────────┤
+│ esc explorer · space commands · ? help · q quit                                                                      │
+└─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘

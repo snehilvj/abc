@@ -53,6 +53,18 @@ fn explorer() {
 }
 
 #[test]
+fn viewer() {
+    let theme = Theme::dark();
+    for preset in gallery::presets(Screen::Viewer) {
+        let screen = draw(120, 40, |frame| {
+            let area = frame.area();
+            abc::ui::draw(frame, area, &preset.app, &theme);
+        });
+        insta::assert_snapshot!(format!("viewer-{}", preset.name), screen);
+    }
+}
+
+#[test]
 fn file_icons() {
     let screen = draw(120, 40, |frame| {
         let area = frame.area();
