@@ -89,6 +89,18 @@ fn find() {
 }
 
 #[test]
+fn add_repo() {
+    let theme = Theme::dark();
+    for preset in gallery::presets(Screen::AddRepo) {
+        let screen = draw(120, 40, |frame| {
+            let area = frame.area();
+            abc::ui::draw(frame, area, &preset.app, &theme);
+        });
+        insta::assert_snapshot!(format!("add-repo-{}", preset.name), screen);
+    }
+}
+
+#[test]
 fn file_icons() {
     let screen = draw(120, 40, |frame| {
         let area = frame.area();
