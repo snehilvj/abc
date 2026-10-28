@@ -4,24 +4,24 @@ expression: screen
 ---
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ────────────────────────────────────────────────────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
-│                                      ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
-│    privue-platform                  │   .github                           │  1  import { normalise } from "../../… │
-│    gst-check                        │   apps                              │  2  import type { GstClient } from ".… │
-│       feat/gst-check      3    2  │   data                              │  3                                     │
-│     gst-rounding                     │   docs                              │  4  export type GstInput = {           │
-│       fix/gst-rounding          1  │   generated                         │  5    gstin: string                    │
-│     ledger-round                     │   packages                          │  6    legalName: string                │
-│       fix/ledger-round    1        │     integrations                    │  7    state?: string                   │
-│       privue-platform               │       gst                           │  8  }                                  │
-│       main                          │         client.ts                   │  9                                     │
-│                                      │         verify.ts                   │ 10  export type Result =               │
-│    ecourts                          │     scoring                         │ 11    | { kind: "ok"; gstin: string }  │
-│     gst-lookup                       │     shared                          │ 12    | { kind: "mismatch"; reason: s… │
-│       feat/gst-lookup           4  │   .gitignore                        │ 13                                     │
-│     ocr-retry                        │   package.json                      │ 14  // Checks a GSTIN against the reg… │
-│       feat/ocr-retry      7  local │   README.md                         │ 15  // details the customer gave us.   │
-│       ecourts                       │   tsconfig.json                     │ 16  export async function verify(      │
-│       main                      3  │                                      │ 17    input: GstInput,                 │
+│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
+│    gst-check                        │   .github                           │  1  import { normalise } from "../../… │
+│       feat/gst-check      3    2  │   apps                              │  2  import type { GstClient } from ".… │
+│     gst-rounding                     │   data                              │  3                                     │
+│       fix/gst-rounding          1  │   docs                              │  4  export type GstInput = {           │
+│     ledger-round                     │   generated                         │  5    gstin: string                    │
+│       fix/ledger-round    1        │   packages                          │  6    legalName: string                │
+│       privue-platform               │     integrations                    │  7    state?: string                   │
+│       main                          │       gst                           │  8  }                                  │
+│                                      │         client.ts                   │  9                                     │
+│    ecourts                          │         verify.ts                   │ 10  export type Result =               │
+│     gst-lookup                       │     scoring                         │ 11    | { kind: "ok"; gstin: string }  │
+│       feat/gst-lookup           4  │     shared                          │ 12    | { kind: "mismatch"; reason: s… │
+│     ocr-retry                        │   .gitignore                        │ 13                                     │
+│       feat/ocr-retry      7  local │   package.json                      │ 14  // Checks a GSTIN against the reg… │
+│       ecourts                       │   README.md                         │ 15  // details the customer gave us.   │
+│       main                      3  │   tsconfig.json                     │ 16  export async function verify(      │
+│                                      │                                      │ 17    input: GstInput,                 │
 │                                      │                                      │ 18    client: GstClient,               │
 │                                      │                                      │ 19  ): Promise<Result> {               │
 │                                      │                                      │ 20    const a = normalise(input)       │

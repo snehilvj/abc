@@ -4,8 +4,7 @@ expression: screen
 ---
 ┌ abc · old-scraper ────────────────────────────────────────────────────────────────────────────────────────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
-│                                      ├───────────────────────────────────────────────────────────────────────────────┤
-│    privue-platform                  │                                                                               │
+│    privue-platform                  ├───────────────────────────────────────────────────────────────────────────────┤
 │    gst-check               #142   │                                                                               │
 │       feat/gst-check      3    2  │                                                                               │
 │     gst-rounding           #139   │                                                                               │
@@ -19,13 +18,14 @@ expression: screen
 │     old-idea                missing │                                                                               │
 │       feat/old-idea                 │                                                                               │
 │                                      │                                                                               │
-│    ecourts                          │                             old-scraper is missing                           │
-│     gst-lookup               #88   │                                                                               │
-│       feat/gst-lookup           4  │                     ~/code/old-scraper no longer exists.                      │
-│     ocr-retry                        │                                                                               │
-│       feat/ocr-retry      7  local │                        space r d removes it from abc.                         │
-│                                      │                                                                               │
+│    ecourts                          │                                                                               │
+│     gst-lookup               #88   │                             old-scraper is missing                           │
+│       feat/gst-lookup           4  │                                                                               │
+│     ocr-retry                        │                     ~/code/old-scraper no longer exists.                      │
+│       feat/ocr-retry      7  local │                                                                               │
+│                                      │                        space r d removes it from abc.                         │
 │    old-scraper             missing │                                                                               │
+│                                      │                                                                               │
 │                                      │                                                                               │
 │                                      │                                                                               │
 │                                      │                                                                               │

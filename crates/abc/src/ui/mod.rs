@@ -97,10 +97,15 @@ impl Geometry {
         self.top + 2
     }
 
-    /// First and last content rows, from under the headers down to the separator.
-    /// In the sidebar, the row above them stays blank under WORKTREES.
+    /// First and last content rows of the explorer and viewer, from under
+    /// their headers down to the separator.
     fn content_rows(&self) -> (u16, u16) {
         (self.top + 3, self.bottom - 3)
+    }
+
+    /// The sidebar's rows: it has no header line, so they start right under WORKTREES.
+    fn sidebar_rows(&self) -> (u16, u16) {
+        (self.header_row(), self.bottom - 3)
     }
 }
 
@@ -266,7 +271,7 @@ fn sidebar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     let focused = app.focus == Focus::Sidebar || app.current_worktree().is_none();
     let header = theme.header(focused).add_modifier(Modifier::BOLD);
     buf.set_string(g.left + 3, g.tab_row(), "WORKTREES", header);
-    let (first, last) = g.content_rows();
+    let (first, last) = g.sidebar_rows();
     let height = (last - first + 1) as usize;
     let note = match app.connection {
         Connection::Starting => Some("Loading…"),

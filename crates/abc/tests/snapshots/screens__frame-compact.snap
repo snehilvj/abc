@@ -4,17 +4,17 @@ expression: screen
 ---
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
-│                                      ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
-│    privue-platform                  │   .github                           │  1  import { normalise } from "../../… │
-│    gst-che…   3    2     #142   │   apps                              │  2  import type { GstClient } from ".… │
-│     gst-rou…         1     #139   │   data                              │  3                                     │
-│     ledger-…   1           #141    │   docs                              │  4  export type GstInput = {           │
-│       priv…                         │   generated                         │  5    gstin: string                    │
-│                                      │   packages                          │  6    legalName: string                │
-│    ecourts                          │     integrations                    │  7    state?: string                   │
-│     gst-loo…         4      #88   │       gst                           │  8  }                                  │
-│     ocr-ret…   7  local             │         client.ts                   │  9                                     │
-│       ecou…         3              │         verify.ts                   │ 10  export type Result =               │
+│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
+│    gst-che…   3    2     #142   │   .github                           │  1  import { normalise } from "../../… │
+│     gst-rou…         1     #139   │   apps                              │  2  import type { GstClient } from ".… │
+│     ledger-…   1           #141    │   data                              │  3                                     │
+│       priv…                         │   docs                              │  4  export type GstInput = {           │
+│                                      │   generated                         │  5    gstin: string                    │
+│    ecourts                          │   packages                          │  6    legalName: string                │
+│     gst-loo…         4      #88   │     integrations                    │  7    state?: string                   │
+│     ocr-ret…   7  local             │       gst                           │  8  }                                  │
+│       ecou…         3              │         client.ts                   │  9                                     │
+│                                      │         verify.ts                   │ 10  export type Result =               │
 │                                      │     scoring                         │ 11    | { kind: "ok"; gstin: string }  │
 │                                      │     shared                          │ 12    | { kind: "mismatch"; reason: s… │
 │                                      │   .gitignore                        │ 13                                     │
