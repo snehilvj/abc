@@ -43,8 +43,8 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
         if sel < offset {
             let header = sel > 0 && matches!(rows[sel - 1], Found::File(_));
             offset = if header { sel - 1 } else { sel };
-        } else if sel >= offset + find::ROWS {
-            offset = sel + 1 - find::ROWS;
+        } else if sel >= offset + f.rows {
+            offset = sel + 1 - f.rows;
         }
     }
     f.offset.set(offset);
@@ -53,7 +53,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     let mut body: Vec<Row> = message(app, name, theme).map_or_else(Vec::new, |m| vec![Row::new(m)]);
     let room = inner.saturating_sub(label::icon_width(theme) + NUMBER + 2);
     for (i, row) in rows.iter().enumerate().skip(offset) {
-        if body.len() == find::ROWS {
+        if body.len() == f.rows {
             break;
         }
         body.push(match *row {
@@ -80,7 +80,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
         });
     }
     // The box keeps its size as results come and go.
-    while body.len() < find::ROWS {
+    while body.len() < f.rows {
         body.push(Row::default());
     }
     let footer = vec![

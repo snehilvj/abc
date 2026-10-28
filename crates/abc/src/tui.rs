@@ -206,6 +206,13 @@ fn apply(settings: &Settings, app: &mut App, theme: &mut Theme) {
     app.repo_gap = settings.sidebar.repo_gap;
     app.worktree_gap = settings.sidebar.worktree_gap;
     theme.icon_gap = usize::from(settings.icons.gap);
+    app.switcher_rows = settings.switcher.rows.max(1);
+    app.find.rows = settings.find.rows.max(1);
+    app.find.max_lines = settings.find.max_lines;
+    app.find.delay = Duration::from_millis(settings.find.delay_ms);
+    app.check_delay = Duration::from_millis(settings.add_repo.check_delay_ms);
+    app.which_key_delay = Duration::from_millis(settings.keys.which_key.delay_ms);
+    crate::viewer::set_tab_width(settings.viewer.tab_width);
     // Checked already: a mistake there means every setting is at its default.
     app.keymap = Keymap::from_settings(&settings.keys).unwrap_or_else(|_| Keymap::defaults());
 }
@@ -444,4 +451,63 @@ fn unanswered(cmd: Cmd) -> Option<Msg> {
         // Handled on the loop's thread.
         Cmd::Connect | Cmd::Copy(_) | Cmd::Highlight { .. } => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_reach_the_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        std::fs::write(
+            &file,
+            "[layout]\nsidebar_width = 30\n[sidebar]\nstyle = \"compact\"\n\
+             [switcher]\nrows = 6\n[find]\nrows = 8\nmax_lines = 50\ndelay_ms = 40\n\
+             [add_repo]\ncheck_delay_ms = 90\n[keys.which_key]\ndelay_ms = 120\n\
+             [keys.global]\n\"space x\" = \"quit\"\n",
+        )
+        .unwrap();
+        let settings = Settings::from_file(&file).unwrap();
+        let mut app = App::new("dev");
+        let mut theme = Theme::dark();
+        apply(&settings, &mut app, &mut theme);
+        assert_eq!(app.widths.sidebar, 30);
+        assert_eq!(app.sidebar_style, SidebarStyle::Compact);
+        assert_eq!(
+            (app.switcher_rows, app.find.rows, app.find.max_lines),
+            (6, 8, 50)
+        );
+        assert_eq!(app.find.delay, Duration::from_millis(40));
+        assert_eq!(app.check_delay, Duration::from_millis(90));
+        assert_eq!(app.which_key_delay, Duration::from_millis(120));
+        assert!(
+            app.keymap
+                .keys_for(crate::keys::Context::Global, crate::keys::Action::Quit)
+                .is_some()
+        );
+        let mut pending = Vec::new();
+        let space = crate::keys::from_event(ratatui::crossterm::event::KeyEvent::from(
+            ratatui::crossterm::event::KeyCode::Char(' '),
+        ));
+        let x = crate::keys::from_event(ratatui::crossterm::event::KeyEvent::from(
+            ratatui::crossterm::event::KeyCode::Char('x'),
+        ));
+        app.keymap
+            .feed(crate::keys::Context::Global, &mut pending, space);
+        assert_eq!(
+            app.keymap
+                .feed(crate::keys::Context::Global, &mut pending, x),
+            crate::keys::Feed::Action(crate::keys::Action::Quit)
+        );
+    }
+
+    #[test]
+    fn an_unknown_theme_says_so() {
+        let mut app = App::new("dev");
+        assert_eq!(theme_choice("light", &mut app), ThemeChoice::Light);
+        assert_eq!(theme_choice("solarized", &mut app), ThemeChoice::Auto);
+        assert!(app.status.unwrap().text.contains("solarized"));
+    }
 }

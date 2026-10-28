@@ -9,11 +9,11 @@ use std::time::{Duration, Instant};
 use abc_core::model::FoundFile;
 use tui_input::Input;
 
-/// Result rows on screen (`find.rows`).
+/// Result rows on screen by default (the `find.rows` setting).
 pub const ROWS: usize = 20;
-/// The most matching lines one search returns (`find.max_lines`).
+/// The most matching lines one search returns by default (`find.max_lines`).
 pub const MAX_LINES: usize = 1000;
-/// How long typing pauses before a search starts (`find.delay_ms`).
+/// How long typing pauses before a search starts by default (`find.delay_ms`).
 pub const DELAY: Duration = Duration::from_millis(150);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +53,12 @@ pub struct Find {
     pub selected: Option<(String, u32)>,
     /// The first row on screen; drawing keeps the selection in view.
     pub(crate) offset: Cell<usize>,
+    /// Result rows on screen.
+    pub rows: usize,
+    /// The most matching lines a search returns.
+    pub max_lines: usize,
+    /// How long typing pauses before a search starts.
+    pub delay: Duration,
 }
 
 impl Default for Find {
@@ -67,6 +73,9 @@ impl Default for Find {
             progress: Progress::Idle,
             selected: None,
             offset: Cell::new(0),
+            rows: ROWS,
+            max_lines: MAX_LINES,
+            delay: DELAY,
         }
     }
 }
@@ -80,7 +89,7 @@ impl Find {
     /// Whether typing has paused long enough at `now` for its search to start.
     pub fn due(&self, now: Instant) -> bool {
         self.typed_at
-            .is_some_and(|typed| now.saturating_duration_since(typed) >= DELAY)
+            .is_some_and(|typed| now.saturating_duration_since(typed) >= self.delay)
     }
 
     /// Starts a search for the query as it is: its id and text. Clearing the

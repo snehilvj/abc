@@ -13,8 +13,21 @@ use crate::explorer::NodePath;
 use crate::highlight::{self, Lang};
 use crate::motion::{self, Pos};
 
-/// Spaces a tab takes in the viewer (`viewer.tab_width`).
+/// Spaces a tab takes in the viewer by default (`viewer.tab_width`).
 pub const TAB_WIDTH: usize = 4;
+
+/// Spaces a tab takes now: a display setting every line shares, so it lives
+/// here rather than threaded through every drawing function.
+static TAB: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(TAB_WIDTH);
+
+/// Sets the spaces a tab takes, from the `viewer.tab_width` setting.
+pub fn set_tab_width(width: usize) {
+    TAB.store(width.max(1), std::sync::atomic::Ordering::Relaxed);
+}
+
+fn tab_width() -> usize {
+    TAB.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 #[derive(Debug, Clone)]
 pub enum Document {
@@ -97,7 +110,7 @@ impl Text {
         let mut col = 0;
         let mut out = String::new();
         for c in line.chars() {
-            let width = if c == '\t' { TAB_WIDTH } else { 1 };
+            let width = if c == '\t' { tab_width() } else { 1 };
             if col + width > start && col < end {
                 out.push(c);
             }
@@ -125,7 +138,7 @@ pub(crate) fn shown(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     for c in line.chars() {
         match c {
-            '\t' => out.extend(std::iter::repeat_n(' ', TAB_WIDTH)),
+            '\t' => out.extend(std::iter::repeat_n(' ', tab_width())),
             '\0'..='\x1f' => out.push(char::from_u32(0x2400 + c as u32).unwrap_or('\u{fffd}')),
             '\x7f' => out.push('\u{2421}'),
             c if c.is_control() => out.push('\u{fffd}'),

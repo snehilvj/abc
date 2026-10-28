@@ -14,7 +14,7 @@ use super::label::{self, BADGE_GAP, blank, labelled, marker, no_icon, pad};
 use super::sidebar::{self, Columns};
 use crate::app::{App, head_name};
 use crate::icons;
-use crate::switcher::{Mode, ROWS, Source, Switcher, Target, ago};
+use crate::switcher::{Mode, Source, Switcher, Target, ago};
 use crate::theme::Theme;
 
 /// The switcher's width, and how far down the screen it sits.
@@ -31,7 +31,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, switcher: &Switcher, theme:
         .iter()
         .enumerate()
         .skip(switcher.offset)
-        .take(ROWS);
+        .take(switcher.rows);
     match switcher.mode {
         Mode::Worktrees => {
             let layout = WorktreeLayout::new(app, switcher, inner, theme);
@@ -65,7 +65,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, switcher: &Switcher, theme:
         }
     }
     // The box keeps its size as results come and go.
-    while body.len() < ROWS {
+    while body.len() < switcher.rows {
         body.push(Row::default());
     }
     let run = match switcher.mode {

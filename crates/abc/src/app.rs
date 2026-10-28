@@ -269,6 +269,12 @@ pub struct App {
     pub pending_at: Option<std::time::Instant>,
     /// Whether the which-key popup shows what can follow the sequence.
     pub which_key: bool,
+    /// How long a sequence waits before the popup shows.
+    pub which_key_delay: std::time::Duration,
+    /// Rows of results in the switcher.
+    pub switcher_rows: usize,
+    /// How long typing pauses before abcd checks a repository to add.
+    pub check_delay: std::time::Duration,
     /// A count typed before a viewer motion: the 12 of `12j`.
     pub count: Option<usize>,
     /// `f`, `F`, `t` or `T`, waiting for the character to find.
@@ -326,6 +332,9 @@ impl App {
             pending: Vec::new(),
             pending_at: None,
             which_key: false,
+            which_key_delay: keys::WHICH_KEY_DELAY,
+            switcher_rows: crate::switcher::ROWS,
+            check_delay: crate::add_repo::DELAY,
             count: None,
             finding: None,
             last_find: None,
@@ -524,7 +533,12 @@ impl App {
             Action::Switcher | Action::FindWorktree => self.open_switcher(Mode::Worktrees),
             Action::FindFile => self.open_switcher(Mode::Files),
             Action::FindInFiles => self.open_find(),
-            Action::AddRepo => self.add_repo = Some(AddRepo::default()),
+            Action::AddRepo => {
+                self.add_repo = Some(AddRepo {
+                    delay: self.check_delay,
+                    ..AddRepo::default()
+                })
+            }
             Action::Help => self.help = true,
             Action::RemoveRepo => {
                 self.remove_repo = self.repo_to_remove().map(|name| RemoveRepo {
@@ -895,6 +909,7 @@ impl App {
     /// current, so `ctrl-p enter` goes back to it.
     fn open_switcher(&mut self, mode: Mode) {
         let mut switcher = Switcher::new(mode, self.switcher_source(mode));
+        switcher.rows = self.switcher_rows;
         if mode == Mode::Worktrees {
             let current = self.current.clone().map(Target::Worktree);
             let candidates = switcher.candidates();
@@ -988,7 +1003,7 @@ impl App {
                 worktree,
                 id,
                 query,
-                max_lines: find::MAX_LINES,
+                max_lines: self.find.max_lines,
             });
         }
     }
@@ -1014,7 +1029,7 @@ impl App {
         if !self.which_key
             && self
                 .pending_at
-                .is_some_and(|at| now.saturating_duration_since(at) >= keys::WHICH_KEY_DELAY)
+                .is_some_and(|at| now.saturating_duration_since(at) >= self.which_key_delay)
         {
             self.which_key = true;
             changed = true;

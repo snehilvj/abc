@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use abc_core::model::RepoCheck;
 use tui_input::Input;
 
-/// How long typing pauses before abcd checks (`add_repo.check_delay_ms`).
+/// How long typing pauses before abcd checks, by default (`add_repo.check_delay_ms`).
 pub const DELAY: Duration = Duration::from_millis(150);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -44,6 +44,8 @@ pub struct AddRepo {
     /// When the path or name last changed, while its check has yet to start.
     pub typed_at: Option<Instant>,
     pub stage: Stage,
+    /// How long typing pauses before abcd checks.
+    pub delay: Duration,
 }
 
 impl Default for AddRepo {
@@ -55,6 +57,7 @@ impl Default for AddRepo {
             check: Check::Idle,
             typed_at: None,
             stage: Stage::Editing,
+            delay: DELAY,
         }
     }
 }
@@ -100,7 +103,7 @@ impl AddRepo {
 
     pub fn due(&self, now: Instant) -> bool {
         self.typed_at
-            .is_some_and(|typed| now.saturating_duration_since(typed) >= DELAY)
+            .is_some_and(|typed| now.saturating_duration_since(typed) >= self.delay)
     }
 
     /// Starts checking: the path and name to check, or nothing for an empty path.

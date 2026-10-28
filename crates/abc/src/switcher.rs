@@ -8,7 +8,7 @@ use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32Str};
 use tui_input::Input;
 
-/// Rows of results on screen (`switcher.rows`).
+/// Rows of results on screen by default; the `switcher.rows` setting changes it.
 pub const ROWS: usize = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,6 +69,8 @@ pub struct Switcher {
     pub selected: usize,
     /// The first result on screen.
     pub offset: usize,
+    /// Rows of results on screen.
+    pub rows: usize,
     matcher: Matcher,
 }
 
@@ -81,6 +83,7 @@ impl Switcher {
             hits: Vec::new(),
             selected: 0,
             offset: 0,
+            rows: ROWS,
             matcher: Matcher::new(Config::DEFAULT),
         };
         switcher.refresh();
@@ -146,8 +149,8 @@ impl Switcher {
         self.selected = i.min(self.hits.len().saturating_sub(1));
         if self.selected < self.offset {
             self.offset = self.selected;
-        } else if self.selected >= self.offset + ROWS {
-            self.offset = self.selected + 1 - ROWS;
+        } else if self.selected >= self.offset + self.rows {
+            self.offset = self.selected + 1 - self.rows;
         }
     }
 

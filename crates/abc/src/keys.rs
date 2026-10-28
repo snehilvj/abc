@@ -14,7 +14,7 @@ use crokey::KeyCombination;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 /// How long an unfinished sequence waits before the which-key popup lists
-/// what can follow (`keys.which_key.delay_ms`).
+/// what can follow, by default (`keys.which_key.delay_ms`).
 pub const WHICH_KEY_DELAY: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
