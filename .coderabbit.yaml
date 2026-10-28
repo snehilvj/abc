@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=https://www.coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit reviews every PR into main. It reads AGENTS.md and CLAUDE.md as
+# its guidelines by default, so the hard rules aren't repeated here.
+language: en-US
+reviews:
+  profile: chill
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!Cargo.lock"
+  path_instructions:
+    - path: "**/snapshots/*.snap"
+      instructions: >-
+        insta snapshots of 120x40 TUI screens. Check the layout looks
+        intentional; don't comment on whitespace.
+  tools:
+    # CI's clippy job already fails on any warning.
+    clippy:
+      enabled: false
