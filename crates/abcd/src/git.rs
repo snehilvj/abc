@@ -3,6 +3,8 @@
 
 use std::path::PathBuf;
 
+use abc_core::model::GitStatus;
+
 /// One record of `git worktree list --porcelain -z`.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Listed {
@@ -55,6 +57,45 @@ pub fn parse_worktrees(out: &[u8]) -> Vec<Listed> {
     }
     listed.extend(current);
     listed
+}
+
+/// Parses `git status --porcelain=v2 --branch -z`: the `# branch.*` headers,
+/// then one NUL-ended entry per changed path. A rename (`2`) is followed by
+/// its original path as a field of its own. Untracked files count as
+/// changed; ignored ones don't.
+pub fn parse_status(out: &[u8]) -> GitStatus {
+    let text = String::from_utf8_lossy(out);
+    let mut status = GitStatus::default();
+    let mut fields = text.split('\0');
+    while let Some(field) = fields.next() {
+        if let Some(header) = field.strip_prefix("# ") {
+            let (key, value) = header.split_once(' ').unwrap_or((header, ""));
+            match key {
+                "branch.upstream" => status.upstream = true,
+                "branch.ab" => {
+                    for count in value.split(' ') {
+                        let number = |n: &str| n.parse().unwrap_or(0);
+                        if let Some(n) = count.strip_prefix('+') {
+                            status.ahead = number(n);
+                        } else if let Some(n) = count.strip_prefix('-') {
+                            status.behind = number(n);
+                        }
+                    }
+                }
+                _ => {}
+            }
+            continue;
+        }
+        match field.chars().next() {
+            Some('1' | 'u' | '?') => status.changed += 1,
+            Some('2') => {
+                status.changed += 1;
+                fields.next();
+            }
+            _ => {}
+        }
+    }
+    status
 }
 
 #[cfg(test)]
@@ -137,6 +178,35 @@ mod tests {
         let listed = parse_worktrees(&out);
         assert!(listed[0].bare && listed[0].head.is_none());
         assert!(!listed[1].bare);
+    }
+
+    #[test]
+    fn status_counts_changes_ahead_and_behind() {
+        let out = [
+            "# branch.oid 0a0461d7",
+            "# branch.head main",
+            "# branch.upstream origin/main",
+            "# branch.ab +1 -3",
+            "1 .M N... 100644 100644 100644 6178 6178 b",
+            "2 R. N... 100644 100644 100644 7898 7898 R100 c",
+            "a",
+            "? n",
+            "! target",
+            "",
+        ]
+        .join("\0");
+        assert_eq!(
+            parse_status(out.as_bytes()),
+            GitStatus {
+                changed: 3,
+                ahead: 1,
+                behind: 3,
+                upstream: true
+            },
+            "the rename's old path isn't another change; ignored files aren't changes"
+        );
+        let clean = "# branch.oid 0a04\0# branch.head (detached)\0";
+        assert_eq!(parse_status(clean.as_bytes()), GitStatus::default());
     }
 
     #[test]

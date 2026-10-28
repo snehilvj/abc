@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use abc_core::model::{Head, Repo, RepoCheck, RepoState, Worktree};
+use abc_core::model::{GitStatus, Head, Repo, RepoCheck, RepoState, Worktree};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tracing::warn;
@@ -224,16 +224,25 @@ pub async fn scan(added: &Added, visits: &BTreeMap<PathBuf, u64>) -> Repo {
             return missing;
         }
     };
-    let worktrees = listed
-        .iter()
-        .enumerate()
-        .filter(|(_, l)| !l.bare)
-        .map(|(i, l)| worktree(l, i == 0, visits))
-        .collect();
+    let mut worktrees = Vec::new();
+    for (i, listed) in listed.iter().enumerate().filter(|(_, l)| !l.bare) {
+        let mut worktree = worktree(listed, i == 0, visits);
+        if !worktree.missing {
+            worktree.git = status(&worktree.path).await;
+        }
+        worktrees.push(worktree);
+    }
     Repo {
         state: RepoState::Present { worktrees },
         ..missing
     }
+}
+
+/// A worktree's branch status and changes, if git can say.
+async fn status(worktree: &Path) -> Option<GitStatus> {
+    let mut status = git_in(worktree);
+    status.args(["status", "--porcelain=v2", "--branch", "-z"]);
+    run(status).await.ok().map(|out| git::parse_status(&out))
 }
 
 fn worktree(listed: &Listed, is_main: bool, visits: &BTreeMap<PathBuf, u64>) -> Worktree {
@@ -388,6 +397,17 @@ pub(crate) mod tests {
         assert!(repo.worktrees()[1].missing, "a worktree whose folder went");
         std::fs::remove_dir_all(&app).unwrap();
         assert!(scan(&entry, &visits).await.is_missing());
+    }
+
+    #[tokio::test]
+    async fn a_scan_reads_each_worktrees_git_status() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = repo(dir.path(), "app", &[]);
+        std::fs::write(app.join("new.txt"), "x").unwrap();
+        let (_, git_dir) = resolve(&app).await.unwrap();
+        let repo = scan(&added("app", &app, git_dir), &BTreeMap::new()).await;
+        let status = repo.worktrees()[0].git.expect("git status");
+        assert_eq!((status.changed, status.upstream), (1, false));
     }
 
     #[test]
