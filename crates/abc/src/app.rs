@@ -137,6 +137,16 @@ pub enum Msg {
         worktree: PathBuf,
         files: Result<Vec<String>, String>,
     },
+    /// The open worktree's files changed on disk: all of them, as they are now.
+    FilesChanged {
+        worktree: PathBuf,
+        files: Vec<String>,
+    },
+    /// The file open in a worktree's viewer changed on disk, or went.
+    FileChanged {
+        worktree: PathBuf,
+        path: String,
+    },
     /// Pull request status is off, and why.
     GithubOff(String),
 }
@@ -583,6 +593,10 @@ impl App {
 
     pub fn current_viewer(&self) -> Option<&Viewer> {
         self.current.as_ref().and_then(|p| self.viewers.get(p))
+    }
+
+    pub fn current_viewer_mut(&mut self) -> Option<&mut Viewer> {
+        self.current.as_ref().and_then(|p| self.viewers.get_mut(p))
     }
 
     /// Moves through the open file, Vim style. False if there's no text to
@@ -1292,10 +1306,28 @@ impl App {
                 else {
                     return;
                 };
-                viewer.document = match contents {
+                let document = match contents {
                     Ok(contents) => Document::from_contents(contents, viewer.name()),
                     Err(why) => Document::Failed(why),
                 };
+                if std::mem::take(&mut viewer.reloading) {
+                    // Changed on disk: coloured text waits for its colours, the rest shows at once.
+                    match document {
+                        Document::Text(text) if text.lang != Lang::Plain => {
+                            let (source, lang) = (text.source(), text.lang);
+                            viewer.next = Some(text);
+                            self.outbox.push(Cmd::Highlight {
+                                worktree,
+                                path,
+                                source,
+                                lang,
+                            });
+                        }
+                        document => viewer.replace(document),
+                    }
+                    return;
+                }
+                viewer.document = document;
                 let landing = viewer.landing.take().filter(|_| viewer.has_text());
                 if let Document::Text(text) = &viewer.document
                     && text.lang != Lang::Plain
@@ -1319,13 +1351,39 @@ impl App {
                 path,
                 spans,
             } => {
-                if let Some(viewer) = self
+                let Some(viewer) = self
                     .viewers
                     .get_mut(&worktree)
                     .filter(|v| v.path.join("/") == path)
-                    && let Document::Text(text) = &mut viewer.document
-                {
+                else {
+                    return;
+                };
+                if let Some(mut next) = viewer.next.take() {
+                    next.spans = spans;
+                    viewer.replace(Document::Text(next));
+                } else if let Document::Text(text) = &mut viewer.document {
                     text.spans = spans;
+                }
+            }
+            Msg::FilesChanged { worktree, files } => {
+                if let Some(listing) = self.listings.get_mut(&worktree) {
+                    match listing {
+                        Listing::Ready(explorer) => explorer.update(&files),
+                        _ => {
+                            *listing =
+                                Listing::Ready(Box::new(crate::explorer::Explorer::new(&files)))
+                        }
+                    }
+                }
+            }
+            Msg::FileChanged { worktree, path } => {
+                if let Some(viewer) = self
+                    .viewers
+                    .get_mut(&worktree)
+                    .filter(|v| v.path.join("/") == path && !v.reloading)
+                {
+                    viewer.reloading = true;
+                    self.outbox.push(Cmd::ReadFile { worktree, path });
                 }
             }
             Msg::CopyFailed(why) => {
@@ -2684,6 +2742,106 @@ mod tests {
         app.status = None;
         app.apply(Msg::GithubOff("gh is not logged in".into()));
         assert!(app.status.is_none(), "said once");
+    }
+
+    #[test]
+    fn new_files_appear_in_the_explorer_as_they_come() {
+        let mut app = with_files();
+        let before = explorer(&app).selected();
+        let mut files = explorer(&app).files();
+        files.push("packages/scoring/new.py".into());
+        app.apply(Msg::FilesChanged {
+            worktree: fake::current(),
+            files,
+        });
+        assert!(
+            explorer(&app)
+                .files()
+                .contains(&"packages/scoring/new.py".to_string())
+        );
+        assert_eq!(explorer(&app).selected(), before, "the selection holds");
+    }
+
+    /// The viewer's text, as lines.
+    fn text_of(app: &App) -> Vec<String> {
+        match &app.current_viewer().unwrap().document {
+            Document::Text(text) => text.lines.clone(),
+            other => panic!("no text: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_changed_file_is_read_again_and_shown_once_coloured() {
+        let path = "packages/integrations/gst/client.ts";
+        let mut app = viewing(path);
+        app.current_viewer_mut().unwrap().cursor = Pos { line: 3, col: 2 };
+        app.apply(Msg::FileChanged {
+            worktree: fake::current(),
+            path: path.into(),
+        });
+        assert_eq!(
+            app.outbox,
+            [Cmd::ReadFile {
+                worktree: fake::current(),
+                path: path.into()
+            }]
+        );
+        app.outbox.clear();
+        let new = "// changed\nexport type Record = {}\nexport interface GstClient {}\n\n\n";
+        app.apply(Msg::FileRead {
+            worktree: fake::current(),
+            path: path.into(),
+            contents: Ok(abc_core::model::FileContents::Text { text: new.into() }),
+        });
+        assert_ne!(
+            text_of(&app)[0],
+            "// changed",
+            "the old text until the new is coloured"
+        );
+        let Some(Cmd::Highlight { source, lang, .. }) = app.outbox.pop() else {
+            panic!("no highlight asked for");
+        };
+        app.apply(Msg::Highlighted {
+            worktree: fake::current(),
+            path: path.into(),
+            spans: highlight::highlight(&source, lang),
+        });
+        assert_eq!(text_of(&app)[0], "// changed");
+        assert_eq!(cursor(&app), (3, 0), "where it was, within the new text");
+    }
+
+    #[test]
+    fn a_file_that_shrank_or_went_keeps_the_cursor_in_it() {
+        let mut app = viewing("LICENSE");
+        app.current_viewer_mut().unwrap().cursor = Pos { line: 5, col: 10 };
+        app.current_viewer_mut().unwrap().scroll = 4;
+        app.apply(Msg::FileChanged {
+            worktree: fake::current(),
+            path: "LICENSE".into(),
+        });
+        app.apply(Msg::FileRead {
+            worktree: fake::current(),
+            path: "LICENSE".into(),
+            contents: Ok(abc_core::model::FileContents::Text {
+                text: "MIT\nshort".into(),
+            }),
+        });
+        assert_eq!(text_of(&app), ["MIT", "short"], "plain text: at once");
+        assert_eq!(cursor(&app), (1, 4));
+        assert_eq!(app.current_viewer().unwrap().scroll, 0);
+        app.apply(Msg::FileChanged {
+            worktree: fake::current(),
+            path: "LICENSE".into(),
+        });
+        app.apply(Msg::FileRead {
+            worktree: fake::current(),
+            path: "LICENSE".into(),
+            contents: Err("No such file or directory".into()),
+        });
+        assert!(matches!(
+            app.current_viewer().unwrap().document,
+            Document::Failed(_)
+        ));
     }
 
     #[test]

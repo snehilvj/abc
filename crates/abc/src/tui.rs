@@ -88,6 +88,8 @@ pub fn run(paths: Paths) -> Result<()> {
     let result = (|| -> Result<()> {
         let mut client: Option<(Arc<Client>, Replies)> = None;
         let mut visited: Option<PathBuf> = None;
+        // What abcd was last told this abc has open, to follow on disk.
+        let mut following: Option<(PathBuf, Option<String>)> = None;
         loop {
             terminal.draw(|frame| {
                 let area = frame.area();
@@ -97,7 +99,7 @@ pub fn run(paths: Paths) -> Result<()> {
             // waiting before drawing again, so held keys never lag.
             loop {
                 if let Ok(net) = rx.try_recv() {
-                    receive(net, &mut app, &mut client);
+                    receive(net, &mut app, &mut client, &mut following);
                     break;
                 }
                 if app.tick(Instant::now()) || !app.outbox.is_empty() {
@@ -115,7 +117,7 @@ pub fn run(paths: Paths) -> Result<()> {
                 }
             }
             while let Ok(net) = rx.try_recv() {
-                receive(net, &mut app, &mut client);
+                receive(net, &mut app, &mut client, &mut following);
             }
             while event::poll(Duration::ZERO)? {
                 match event::read()? {
@@ -182,6 +184,22 @@ pub fn run(paths: Paths) -> Result<()> {
                     });
                 }
             }
+            // abcd follows the open worktree and file, and says when they change.
+            let open = app.current.clone().map(|worktree| {
+                let file = app.current_viewer().map(|v| v.path.join("/"));
+                (worktree, file)
+            });
+            if open != following
+                && let Some((client, _)) = &client
+            {
+                following = open.clone();
+                if let Some((worktree, path)) = open {
+                    let client = client.clone();
+                    runtime.spawn(async move {
+                        let _ = client.call::<Done>(Call::Watch { worktree, path }).await;
+                    });
+                }
+            }
             if app.quit {
                 return Ok(());
             }
@@ -194,9 +212,16 @@ pub fn run(paths: Paths) -> Result<()> {
     result
 }
 
-fn receive(net: Net, app: &mut App, client: &mut Option<(Arc<Client>, Replies)>) {
+fn receive(
+    net: Net,
+    app: &mut App,
+    client: &mut Option<(Arc<Client>, Replies)>,
+    following: &mut Option<(PathBuf, Option<String>)>,
+) {
     match net {
         Net::Connected(connected, replies, msg) => {
+            // A new connection follows nothing yet.
+            *following = None;
             if let Msg::Connected { startup, .. } = &msg {
                 tracing::info!(abcd = connected.server.build, ?startup, "connected");
             }
@@ -346,9 +371,11 @@ async fn session(paths: Paths, abcd: PathBuf, tx: mpsc::Sender<Net>, searches: S
                             };
                             Msg::Found { id, files }
                         }
-                        // abc doesn't ask to watch yet.
-                        Some(AbcdEvent::FilesChanged { .. } | AbcdEvent::FileChanged { .. }) => {
-                            continue;
+                        Some(AbcdEvent::FilesChanged { worktree, files }) => {
+                            Msg::FilesChanged { worktree, files }
+                        }
+                        Some(AbcdEvent::FileChanged { worktree, path }) => {
+                            Msg::FileChanged { worktree, path }
                         }
                         None => break,
                     },

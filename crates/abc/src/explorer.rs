@@ -107,6 +107,43 @@ impl Explorer {
         }
     }
 
+    /// The worktree's files changed: the tree is rebuilt from `files`,
+    /// keeping its open folders, selection and scroll. A selection that went
+    /// falls back to its nearest folder left, then the first row; a file open
+    /// in the viewer that went is no longer marked.
+    pub fn update<S: AsRef<str>>(&mut self, files: &[S]) {
+        let next = Self::new(files);
+        let exists = |path: &[String]| {
+            next.folders.contains(path) || next.files().iter().any(|f| *f == path.join("/"))
+        };
+        let selected = self.selected();
+        let keep = (0..=selected.len())
+            .rev()
+            .map(|n| selected[..n].to_vec())
+            .find(|path| !path.is_empty() && exists(path));
+        {
+            let mut state = self.state.borrow_mut();
+            match keep {
+                Some(path) => {
+                    state.select(path);
+                }
+                None => {
+                    state.select(
+                        next.tree
+                            .first()
+                            .map(|n| vec![n.name.clone()])
+                            .unwrap_or_default(),
+                    );
+                }
+            }
+        }
+        self.open = self.open.take().filter(|path| exists(path));
+        self.tree = next.tree;
+        self.folders = next.folders;
+        // Rows are built again at the next draw.
+        *self.items.borrow_mut() = None;
+    }
+
     pub fn is_empty(&self) -> bool {
         self.tree.is_empty()
     }
@@ -204,6 +241,41 @@ impl Clone for Explorer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn segments(path: &str) -> NodePath {
+        path.split('/').map(String::from).collect()
+    }
+
+    #[test]
+    fn new_files_keep_the_open_folders_and_the_selection() {
+        let mut e = Explorer::new(&["src/main.rs", "src/lib.rs", "README.md"]);
+        e.reveal(&segments("src/main.rs"));
+        e.update(&[
+            "src/main.rs",
+            "src/lib.rs",
+            "src/new.rs",
+            "README.md",
+            "docs/a.md",
+        ]);
+        assert!(e.state.borrow().opened().contains(&segments("src")));
+        assert_eq!(e.selected(), segments("src/main.rs"));
+        assert_eq!(e.open, Some(segments("src/main.rs")));
+        assert!(e.files().contains(&"src/new.rs".to_string()));
+        assert!(e.is_folder(&segments("docs")));
+    }
+
+    #[test]
+    fn a_selection_that_went_falls_back_to_its_folder() {
+        let mut e = Explorer::new(&["src/a/x.rs", "src/b.rs"]);
+        e.reveal(&segments("src/a/x.rs"));
+        e.update(&["src/b.rs"]);
+        assert_eq!(e.selected(), segments("src"), "the nearest folder left");
+        assert_eq!(e.open, None, "the file open went");
+        e.update(&["README.md"]);
+        assert_eq!(e.selected(), segments("README.md"), "or the first row");
+        e.update(&Vec::<String>::new());
+        assert!(e.is_empty());
+    }
 
     #[test]
     fn the_files_come_back_in_path_order() {

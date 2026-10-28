@@ -174,6 +174,10 @@ pub struct Viewer {
     pub selection: Option<Selection>,
     /// A line to go to once the text arrives, when find in files opened the file.
     pub landing: Option<usize>,
+    /// The file changed on disk and is being read again.
+    pub reloading: bool,
+    /// Its new text, shown once it's coloured, so it never flashes plain.
+    pub next: Option<Text>,
     /// Rows the text took when last drawn, for paging.
     pub(crate) height: Cell<usize>,
     /// The first column on screen. Drawing moves it to keep the cursor in view.
@@ -220,6 +224,8 @@ impl Viewer {
             jumps: Vec::new(),
             selection: None,
             landing: None,
+            reloading: false,
+            next: None,
             height: Cell::new(30),
             hscroll: Cell::new(0),
         }
@@ -227,6 +233,20 @@ impl Viewer {
 
     pub fn name(&self) -> &str {
         self.path.last().map_or("", String::as_str)
+    }
+
+    /// Shows `document` in place of what was there, as after the file changed:
+    /// the cursor, view and selection stay where they were, within the new text.
+    pub fn replace(&mut self, document: Document) {
+        self.document = document;
+        let lines = self.lines();
+        let cursor = motion::clamp(lines, self.cursor);
+        let fits = |p: Pos| p.line < lines.len();
+        if self.selection.is_some_and(|s| !fits(s.anchor)) {
+            self.selection = None;
+        }
+        self.cursor = cursor;
+        self.scroll = self.scroll.min(self.max_scroll());
     }
 
     /// The text's lines; none for a file that isn't text, or isn't here yet.
