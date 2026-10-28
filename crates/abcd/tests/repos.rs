@@ -296,3 +296,44 @@ async fn a_url_that_cant_be_cloned_says_why() {
     assert_eq!(failed.message, format!("no repository at {nowhere}"));
     shut_down(client).await;
 }
+
+#[tokio::test]
+async fn a_changed_settings_file_applies_while_abcd_runs() {
+    let home = home();
+    let url = remote(home.path(), "app");
+    let client = connect(home.path()).await;
+    let into = |dir: &str| home.path().join(dir).join("app").display().to_string();
+    let before: RepoCheck = client.call(check_url(&url, "")).await.unwrap();
+    assert_eq!(before, RepoCheck::Remote { into: into("code") });
+
+    let config = common::paths(home.path()).config_file();
+    let elsewhere = home.path().join("elsewhere").display().to_string();
+    std::fs::write(&config, format!("[add_repo]\nclone_dir = {elsewhere:?}\n")).unwrap();
+    let mut after = before;
+    for _ in 0..60 {
+        after = client.call(check_url(&url, "")).await.unwrap();
+        if after != (RepoCheck::Remote { into: into("code") }) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        after,
+        RepoCheck::Remote {
+            into: into("elsewhere")
+        },
+        "within a second or so"
+    );
+
+    std::fs::write(&config, "[add_repo]\nclone_dirr = \"x\"\n").unwrap();
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let kept: RepoCheck = client.call(check_url(&url, "")).await.unwrap();
+    assert_eq!(
+        kept,
+        RepoCheck::Remote {
+            into: into("elsewhere")
+        },
+        "the last good settings"
+    );
+    shut_down(client).await;
+}

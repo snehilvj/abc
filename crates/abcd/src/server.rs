@@ -41,8 +41,13 @@ struct Server {
     /// Notified when a client asks abcd to stop.
     stop: Notify,
     state: State,
+}
+
+impl Server {
     /// Files larger than this aren't read or searched (`viewer.max_file_size_mb`).
-    file_limit: u64,
+    fn file_limit(&self) -> u64 {
+        self.state.settings().viewer.max_file_size_mb * 1024 * 1024
+    }
 }
 
 /// Serves the profile until asked to stop, signalled, or its socket goes.
@@ -81,7 +86,7 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             Some(e),
         ),
     };
-    let _log = crate::log::start(&paths, &settings.server.log)?;
+    let log = crate::log::start(&paths, &settings.server.log)?;
     if let Some(e) = broken {
         warn!("{}; using the defaults", Settings::describe(&e));
     }
@@ -105,13 +110,13 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
         clients: AtomicUsize::new(0),
         stop: Notify::new(),
         state,
-        file_limit: settings.viewer.max_file_size_mb * 1024 * 1024,
     });
     let mut term = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
     // Handled, so closing the terminal that started abcd doesn't stop it.
     let mut hangup = signal(SignalKind::hangup())?;
     let mut check = tokio::time::interval(SOCKET_CHECK);
+    let mut watch = abc_core::settings::Watch::new(&paths.config_file());
     // Worktrees made or removed outside abc, and repositories that went.
     let mut rescan =
         tokio::time::interval(Duration::from_secs(settings.git.status_interval.max(1)));
@@ -127,8 +132,27 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             _ = term.recv() => break "SIGTERM",
             _ = interrupt.recv() => break "SIGINT",
             _ = hangup.recv() => info!("ignoring SIGHUP"),
-            _ = check.tick() => if !socket.exists() {
-                break "its socket was removed";
+            _ = check.tick() => {
+                if !socket.exists() {
+                    break "its socket was removed";
+                }
+                if watch.changed() {
+                    match Settings::load(&paths.config_file()) {
+                        Ok(settings) => {
+                            log.set_filter(&settings.server.log);
+                            let every = settings.git.status_interval.max(1);
+                            if every != server.state.settings().git.status_interval.max(1) {
+                                rescan = tokio::time::interval(Duration::from_secs(every));
+                            }
+                            server.state.set_settings(settings).await;
+                            info!("settings reloaded");
+                        }
+                        Err(e) => warn!(
+                            "{}; keeping the last good settings",
+                            Settings::describe(&e)
+                        ),
+                    }
+                }
             },
             // Off the accept loop: gh can take a while.
             _ = rescan.tick() => if server.state.subscribers.load(Ordering::SeqCst) > 0 {
@@ -361,7 +385,7 @@ async fn answer(server: &Server, request: Request) -> Response {
             if !state.knows(&worktree).await {
                 return unknown_worktree(id, &worktree);
             }
-            let limit = server.file_limit;
+            let limit = server.file_limit();
             let shown = path.clone();
             let read =
                 tokio::task::spawn_blocking(move || files::read(&worktree, &path, limit)).await;
@@ -411,7 +435,7 @@ impl Search {
             let _ = out.send(encode(&unknown_worktree(id, &self.worktree)));
             return;
         }
-        let limit = server.file_limit;
+        let limit = server.file_limit();
         let events = out.clone();
         let capped = tokio::task::spawn_blocking(move || {
             let files = files::list(&self.worktree);

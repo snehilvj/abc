@@ -1,16 +1,36 @@
 //! abcd's log: `abcd.log` in the profile's state folder, the previous run's
-//! kept as `abcd.log.1`, filtered by the `server.log` setting (or `ABC_LOG`).
+//! kept as `abcd.log.1`, filtered by the `server.log` setting (or `ABC_LOG`),
+//! which can change while abcd runs.
 
 use std::fs;
 
 use abc_core::paths::Paths;
 use anyhow::Context as _;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::util::SubscriberInitExt as _;
+use tracing_subscriber::{EnvFilter, Registry, reload};
 
-/// Starts logging to the profile's log file. Keep the guard: dropping it
-/// flushes what's left.
-pub fn start(paths: &Paths, filter: &str) -> anyhow::Result<WorkerGuard> {
+/// The log, while abcd runs: dropping it flushes what's left.
+pub struct Log {
+    _guard: WorkerGuard,
+    filter: reload::Handle<EnvFilter, Registry>,
+}
+
+impl Log {
+    /// Filters by `filter` from now on, such as "info" or "abcd=debug".
+    pub fn set_filter(&self, filter: &str) {
+        let _ = self.filter.reload(parse(filter));
+    }
+}
+
+/// A filter as written, or `info` if it can't be read.
+fn parse(filter: &str) -> EnvFilter {
+    EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"))
+}
+
+/// Starts logging to the profile's log file.
+pub fn start(paths: &Paths, filter: &str) -> anyhow::Result<Log> {
     let log = paths.server_log();
     if log.exists() {
         let mut previous = log.clone().into_os_string();
@@ -19,11 +39,17 @@ pub fn start(paths: &Paths, filter: &str) -> anyhow::Result<WorkerGuard> {
     }
     let file = fs::File::create(&log).with_context(|| format!("creating {}", log.display()))?;
     let (writer, guard) = tracing_appender::non_blocking(file);
-    let filter = EnvFilter::try_new(filter).unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(writer)
-        .with_ansi(false)
+    let (filter, handle) = reload::Layer::new(parse(filter));
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(writer)
+                .with_ansi(false),
+        )
         .init();
-    Ok(guard)
+    Ok(Log {
+        _guard: guard,
+        filter: handle,
+    })
 }

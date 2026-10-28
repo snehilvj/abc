@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use abc_core::model::{Repo, RepoCheck, RepoState};
 use abc_core::protocol::{self, Done, ErrorCode, Event, Failure, Github, Repos};
-use abc_core::settings::{self, Settings};
+use abc_core::settings::Settings;
 use abc_core::source::{self, is_url};
 use tokio::process::Command;
 use tokio::sync::{Mutex, broadcast};
@@ -25,10 +25,8 @@ pub struct State {
     file: PathBuf,
     /// Where `~` and relative paths start.
     home: PathBuf,
-    /// Where git URLs are cloned (`add_repo.clone_dir`), as written.
-    clone_dir: String,
-    /// The `github` settings.
-    github: settings::Github,
+    /// The settings, as last loaded: they can change while abcd runs.
+    settings: std::sync::RwLock<Settings>,
     /// Set while pull requests are being fetched, so fetches never overlap.
     fetching: AtomicBool,
     inner: Mutex<Inner>,
@@ -87,8 +85,7 @@ impl State {
         Ok(Self {
             file,
             home,
-            clone_dir: settings.add_repo.clone_dir.clone(),
-            github: settings.github.clone(),
+            settings: std::sync::RwLock::new(settings.clone()),
             fetching: AtomicBool::new(false),
             inner: Mutex::new(Inner {
                 saved,
@@ -101,6 +98,18 @@ impl State {
             events: broadcast::channel(64).0,
             subscribers: AtomicUsize::new(0),
         })
+    }
+
+    /// The settings as they are now.
+    pub fn settings(&self) -> Settings {
+        self.settings.read().unwrap().clone()
+    }
+
+    /// Settings loaded again after their file changed. GitHub's take effect
+    /// at the next fetch, which comes at once.
+    pub async fn set_settings(&self, settings: Settings) {
+        *self.settings.write().unwrap() = settings;
+        self.inner.lock().await.fetched = None;
     }
 
     /// How many repositories and worktrees, and whether GitHub is on.
@@ -164,8 +173,9 @@ impl State {
 
     /// Where a repository named `name` is cloned, and how to show it.
     fn clone_target(&self, name: &str) -> (PathBuf, String) {
-        let into = registry::expand(&self.clone_dir, &self.home).join(name);
-        let shown = format!("{}/{name}", self.clone_dir.trim_end_matches('/'));
+        let clone_dir = self.settings().add_repo.clone_dir;
+        let into = registry::expand(&clone_dir, &self.home).join(name);
+        let shown = format!("{}/{name}", clone_dir.trim_end_matches('/'));
         (into, shown)
     }
 
@@ -325,7 +335,7 @@ impl State {
     /// Fetches pull requests if `github.pr_interval` has passed since the
     /// last fetch, or there hasn't been one, and no fetch is running.
     pub async fn fetch_prs_if_due(&self) {
-        let interval = Duration::from_secs(self.github.pr_interval);
+        let interval = Duration::from_secs(self.settings().github.pr_interval);
         let due = match self.inner.lock().await.fetched {
             Some(at) => at.elapsed() >= interval,
             None => true,
@@ -340,8 +350,9 @@ impl State {
     /// Asks gh for every repository's pull requests. A repository gh fails
     /// on keeps what it had; gh missing or signed out turns them all off.
     async fn fetch_prs(&self) {
-        let github = if self.github.enabled {
-            gh_login(&self.github.gh).await
+        let settings = self.settings().github;
+        let github = if settings.enabled {
+            gh_login(&settings.gh).await
         } else {
             Github::Disabled
         };
@@ -360,7 +371,7 @@ impl State {
             for (name, path) in present {
                 let origin = registry::origin(&path).await;
                 owners.insert(name.clone(), origin.as_deref().and_then(source::owner));
-                match gh_prs(&self.github.gh, &path).await {
+                match gh_prs(&settings.gh, &path).await {
                     Ok(prs) => {
                         fetched.insert(name, prs);
                     }
