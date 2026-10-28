@@ -6,7 +6,10 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow};
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers,
+};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::SetTitle;
 use ratatui::layout::Rect;
@@ -358,10 +361,15 @@ pub fn find() -> Vec<Preset> {
     ]
 }
 
-/// The add repository dialog's states, opened with `space r a` and typed into.
+/// The add repository dialog's states, opened with `space r a` and pasted into.
 pub fn add_repo() -> Vec<Preset> {
     let opened = || typed(connected(fake::repos()), " ra");
-    let checked = |path: &str| settled(typed(opened(), path));
+    let pasted = |path: &str| {
+        let mut app = opened();
+        app.paste(path);
+        app
+    };
+    let checked = |path: &str| settled(pasted(path));
     let key = |app: App, code: KeyCode| pressed(app, code, KeyModifiers::NONE);
     // Asked of abcd, with the answer still to come.
     let waiting = |mut app: App| {
@@ -369,44 +377,38 @@ pub fn add_repo() -> Vec<Preset> {
         app.outbox.clear();
         app
     };
-    let adding = waiting(key(checked("code/privue-agents/"), KeyCode::Enter));
-    let mut failed = adding.clone();
+    let url = "https://github.com/privue/privue-docs";
+    let named = settled(typed(key(pasted(url), KeyCode::Down), "docs"));
+    let cloning = waiting(key(checked(url), KeyCode::Enter));
+    let mut failed = cloning.clone();
     failed.apply(Msg::AddFailed {
         why: "not connected".into(),
     });
-    let mut taken = key(checked("code/privue-agents/"), KeyCode::Down);
-    taken = typed(taken, "ecourts");
     vec![
-        preset("valid", checked("code/privue-agents/")),
-        preset(
-            "completing",
-            settled(key(typed(opened(), "code/privue-a"), KeyCode::Tab)),
-        ),
         preset("opened", opened()),
-        preset("checking", waiting(typed(opened(), "code/privue-agents/"))),
-        preset("not-git", checked("Downloads/")),
-        preset("not-found", checked("code/nope/")),
-        preset("duplicate", checked("code/ecourts/")),
-        preset("name-taken", taken),
-        preset("adding", adding),
+        preset("folder", checked("~/code/privue-agents")),
+        preset("url", checked(url)),
+        preset("url-named", named),
+        preset("checking", waiting(pasted(url))),
+        preset("not-git", checked("~/Downloads")),
+        preset("not-found", checked("~/code/nope")),
+        preset("no-repository", checked("https://github.com/privue/nope")),
+        preset("duplicate", checked("~/code/ecourts")),
+        preset("clone-exists", checked("https://github.com/privue/notes")),
+        preset("name-taken", checked("~/work/ecourts")),
+        preset("cloning", cloning),
         preset("error", failed),
-        preset(
-            "added",
-            settled(key(checked("code/privue-agents/"), KeyCode::Enter)),
-        ),
+        preset("added", settled(key(checked(url), KeyCode::Enter))),
     ]
 }
 
-/// abcd's answer to a repository command, from the fake disk.
+/// abcd's answer to a repository command, from the fake disk and host.
 fn answer_repo(app: &App, cmd: &Cmd) -> Msg {
     match cmd {
-        Cmd::Complete { path } => Msg::Completions {
+        Cmd::CheckRepo { path, name } => Msg::RepoChecked {
             path: path.clone(),
-            dirs: fake::complete(path),
-        },
-        Cmd::CheckRepo { path } => Msg::RepoChecked {
-            path: path.clone(),
-            check: Ok(fake::check_repo(path, &app.repos)),
+            name: name.clone(),
+            check: Ok(fake::check_repo(path, name, &app.repos)),
         },
         Cmd::AddRepo { path, name } => {
             let mut repos = app.repos.clone();
@@ -466,7 +468,7 @@ fn settled(mut app: App) -> App {
                     app.apply(Msg::Found { id, files });
                     app.apply(Msg::SearchDone { id, capped });
                 }
-                cmd @ (Cmd::Complete { .. } | Cmd::CheckRepo { .. } | Cmd::AddRepo { .. }) => {
+                cmd @ (Cmd::CheckRepo { .. } | Cmd::AddRepo { .. }) => {
                     let msg = answer_repo(&app, &cmd);
                     app.apply(msg);
                 }
@@ -526,7 +528,7 @@ fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
                         let _ = tx.send(Msg::SearchDone { id, capped });
                     });
                 }
-                cmd @ (Cmd::Complete { .. } | Cmd::CheckRepo { .. } | Cmd::AddRepo { .. }) => {
+                cmd @ (Cmd::CheckRepo { .. } | Cmd::AddRepo { .. }) => {
                     let msg = answer_repo(app, &cmd);
                     app.apply(msg);
                 }
@@ -594,6 +596,7 @@ pub fn run(args: Args) -> Result<()> {
     // Ask the terminal for its background before raw mode takes over the input.
     let theme = Theme::resolve(args.theme);
     let mut terminal = ratatui::try_init().context("setting up the terminal")?;
+    paste_in_one_piece();
     let result = (|| -> Result<()> {
         let (tx, rx) = mpsc::channel();
         let mut app = presets[index].app.clone();
@@ -628,8 +631,14 @@ pub fn run(args: Args) -> Result<()> {
                 app.apply(msg);
             }
             while event::poll(Duration::ZERO)? {
-                let Event::Key(key) = event::read()? else {
-                    continue;
+                let key = match event::read()? {
+                    Event::Key(key) => key,
+                    Event::Paste(text) => {
+                        app.paste(&text);
+                        serve(&mut app, &tx);
+                        continue;
+                    }
+                    _ => continue,
                 };
                 if key.kind != KeyEventKind::Press {
                     continue;
@@ -652,8 +661,20 @@ pub fn run(args: Args) -> Result<()> {
             }
         }
     })();
+    let _ = execute!(stdout(), DisableBracketedPaste);
     ratatui::restore();
     result
+}
+
+/// Asks the terminal to send pasted text in one piece rather than as keys,
+/// and to stop again however abc leaves, after a panic too.
+fn paste_in_one_piece() {
+    let _ = execute!(stdout(), EnableBracketedPaste);
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(stdout(), DisableBracketedPaste);
+        previous(info);
+    }));
 }
 
 fn set_title(screen: Screen, state: &str) {

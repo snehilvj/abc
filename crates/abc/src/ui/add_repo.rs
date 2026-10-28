@@ -1,10 +1,10 @@
-//! Drawing the add repository dialog: the path with its completions, the
-//! name, and a line saying what abcd made of the path.
+//! Drawing the add repository dialog: where from, the name, and a line
+//! saying what abcd made of them and what adding will do.
 
 use abc_core::model::RepoCheck;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
 use tui_input::Input;
 
@@ -28,36 +28,17 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, add: &AddRepo, theme: &Them
     let x = area.x + (area.width - width) / 2;
     let inner = width.saturating_sub(4) as usize;
 
-    let mut body = vec![Row::default()];
-    body.push(field(
+    let path_hint = "a folder on this machine, or a git URL to clone";
+    let path = field(
         "Path",
         &add.path,
-        None,
+        path_hint,
         add.field == Field::Path,
         inner,
         theme,
-    ));
-    if let Some(c) = &add.completions {
-        for (i, dir) in c.dirs.iter().enumerate() {
-            let mut spans = vec![blank(LABEL)];
-            spans.extend(labelled(
-                icons::FOLDER,
-                theme.style(theme.folder),
-                dir.as_str(),
-                theme.text(),
-                theme,
-            ));
-            body.push(Row::new(spans).selected(c.selected == Some(i)));
-        }
-    }
-    body.push(Row::default());
-    // An empty name means the folder's, shown once abcd has found a repository there.
-    let found = matches!(add.check, Check::Checked(Ok(RepoCheck::Ready { .. })));
-    let default = add
-        .name
-        .value()
-        .is_empty()
-        .then(|| if found { add.folder_name() } else { "" });
+    );
+
+    let default = add.default_name();
     let mut name = field(
         "Name",
         &add.name,
@@ -66,11 +47,11 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, add: &AddRepo, theme: &Them
         inner,
         theme,
     );
-    if let Some(folder) = default {
-        let note = if folder.is_empty() {
-            "(the folder name)"
-        } else {
-            "(defaults to the folder name)"
+    if add.name.value().is_empty() {
+        let note = match (default.is_empty(), add.is_url()) {
+            (true, _) => "(the folder's or the repository's)",
+            (false, true) => "(the repository's name)",
+            (false, false) => "(the folder's name)",
         };
         let used = label::width(&name.left.spans);
         name.left
@@ -78,12 +59,16 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, add: &AddRepo, theme: &Them
             .push(blank((LABEL + NAME).saturating_sub(used).max(1)));
         name.left.spans.push(Span::styled(note, theme.dim()));
     }
-    body.push(name);
-    body.push(Row::default());
-    body.push(Row::new(check_line(app, add, theme)));
 
+    let body = vec![
+        Row::default(),
+        path,
+        Row::default(),
+        name,
+        Row::default(),
+        Row::new(check_line(app, add, theme)),
+    ];
     let footer = vec![
-        ("tab".into(), "complete"),
         ("↑↓".into(), "path/name"),
         ("enter".into(), "add"),
         ("esc".into(), "cancel"),
@@ -97,13 +82,13 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, add: &AddRepo, theme: &Them
     dialog::draw(buf, (x, area.y + TOP), width, dialog, theme);
 }
 
-/// "Path  ~/code/…" or "Name  …": the label in the accent colour while the
-/// field has focus, the text scrolled to keep its cursor in sight. A name
-/// left empty shows the folder's in its place.
+/// "Path  …" or "Name  …": the label in the accent colour while the field
+/// has focus, the text scrolled to keep its cursor in sight. Empty, it shows
+/// `stand_in`: a hint for the path, the default for the name.
 fn field<'a>(
     label: &'a str,
     input: &'a Input,
-    default: Option<&'a str>,
+    stand_in: &'a str,
     focused: bool,
     inner: usize,
     theme: &Theme,
@@ -113,12 +98,21 @@ fn field<'a>(
     } else {
         theme.dim()
     };
-    let room = inner.saturating_sub(LABEL + 1);
-    let scroll = input.visual_scroll(room);
-    let mut skipped = 0;
-    let text: String = match default {
-        Some(name) => name.to_string(),
-        None => input
+    let mut spans = vec![Span::styled(format!("{label:<LABEL$}"), label_style)];
+    let scroll = input.visual_scroll(inner.saturating_sub(LABEL + 1));
+    if input.value().is_empty() {
+        // The path's hint sits after its cursor; the name's default stands where it will be.
+        let hint = label == "Path";
+        let style = if hint { theme.dim() } else { theme.text() };
+        let text = if hint && focused {
+            format!(" {stand_in}")
+        } else {
+            stand_in.to_string()
+        };
+        spans.push(Span::styled(text, style));
+    } else {
+        let mut skipped = 0;
+        let shown: String = input
             .value()
             .chars()
             .skip_while(|c| {
@@ -128,12 +122,10 @@ fn field<'a>(
                 }
                 skip
             })
-            .collect(),
-    };
-    let row = Row::new(vec![
-        Span::styled(format!("{label:<LABEL$}"), label_style),
-        Span::styled(text, theme.text()),
-    ]);
+            .collect();
+        spans.push(Span::styled(shown, theme.text()));
+    }
+    let row = Row::new(spans);
     if focused {
         row.cursor(LABEL + input.visual_cursor() - scroll)
     } else {
@@ -141,31 +133,45 @@ fn field<'a>(
     }
 }
 
-/// What abcd made of the path, a taken name, or how adding is going.
+/// What abcd made of the path and name, or how adding is going.
 fn check_line<'a>(app: &App, add: &AddRepo, theme: &Theme) -> Line<'a> {
     let failure = |text: String| label::badge(icons::FAILURE, text, theme.error, theme);
-    let progress = |text: &'a str| labelled(icons::SYNC, theme.dim(), text, theme.dim(), theme);
+    let success = |text: String| label::badge(icons::SUCCESS, text, theme.ok, theme);
+    let progress = |text: String| labelled(icons::SYNC, theme.dim(), text, theme.dim(), theme);
+    let name = add.name().to_string();
+    // A repository abcd can add still needs a free name.
+    let named = |ok: String| {
+        if name.is_empty() {
+            failure("type a name".into())
+        } else if app.name_taken(&name) {
+            failure(format!("a repository is already named {name}"))
+        } else {
+            success(ok)
+        }
+    };
     let spans: Vec<Span> = match (&add.stage, &add.check) {
-        (Stage::Adding, _) => progress("adding"),
+        (Stage::Adding, _) => match add.clone_into() {
+            Some(into) => progress(format!("cloning into {into}")),
+            None => progress("adding".into()),
+        },
         (Stage::Failed(why), _) => failure(format!("abcd: {why}")),
         (_, Check::Idle) => Vec::new(),
-        (_, Check::Checking) => progress("checking"),
+        (_, Check::Checking) => progress("checking".into()),
         (_, Check::Checked(Err(why))) => failure(format!("abcd: {why}")),
         (_, Check::Checked(Ok(check))) => match check {
-            RepoCheck::Ready { .. } if app.name_taken(add.name()) => {
-                failure(format!("the name {} is taken", add.name()))
-            }
-            RepoCheck::Ready { .. } if add.name().is_empty() => failure("type a name".into()),
-            RepoCheck::Ready { worktrees } => label::badge(
-                icons::SUCCESS,
-                format!("git repository · {} found", plural(*worktrees, "worktree")),
-                theme.ok,
-                theme,
-            ),
+            RepoCheck::Ready { worktrees } => named(format!(
+                "git repository · {} found",
+                plural(*worktrees, "worktree")
+            )),
+            RepoCheck::Remote { into } => named(format!("clones into {into}")),
+            RepoCheck::NotFound if add.is_url() => failure("no repository at that URL".into()),
             RepoCheck::NotFound => failure("no such folder".into()),
             RepoCheck::NotGit => failure("not a git repository".into()),
             RepoCheck::AlreadyAdded { name } => failure(format!("already added as {name}")),
+            RepoCheck::TargetExists { into } => {
+                failure(format!("{into} already exists · name it something else"))
+            }
         },
     };
-    Line::from(spans).style(Style::default())
+    Line::from(spans)
 }

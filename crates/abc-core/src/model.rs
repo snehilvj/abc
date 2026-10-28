@@ -142,7 +142,7 @@ pub struct FoundLine {
     pub text: String,
 }
 
-/// What abcd made of a folder offered as a repository to add.
+/// What abcd made of a folder or git URL offered as a repository to add.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RepoCheck {
@@ -150,11 +150,20 @@ pub enum RepoCheck {
     Ready {
         worktrees: usize,
     },
+    /// A repository at a git URL, which abcd will clone into `into` and add.
+    Remote {
+        into: String,
+    },
+    /// No such folder, or nothing at that URL.
     NotFound,
     NotGit,
-    /// Already added, under this name; found by its git folder, so through
-    /// any of its worktrees too.
+    /// Already added, under this name; found by its git folder (so through
+    /// any of its worktrees too) or, for a URL, by its remote.
     AlreadyAdded {
         name: String,
+    },
+    /// The folder a clone would go into already exists.
+    TargetExists {
+        into: String,
     },
 }

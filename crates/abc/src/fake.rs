@@ -533,26 +533,49 @@ pub const FOLDERS: &[&str] = &[
     "~/Desktop/",
     "~/Documents/",
     "~/Downloads/",
+    "~/work/",
+    "~/work/ecourts/",
 ];
 
-/// The folders that complete `path`, as abcd lists them: within its folder,
-/// starting with what follows the last `/`.
-pub fn complete(path: &str) -> Vec<String> {
-    let parent = &path[..path.rfind('/').map_or(0, |i| i + 1)];
-    FOLDERS
-        .iter()
-        .filter(|f| {
-            f.starts_with(path)
-                && f.len() > parent.len()
-                && !f[parent.len()..].trim_end_matches('/').contains('/')
-        })
-        .map(|f| f.to_string())
-        .collect()
-}
+/// Repositories the fake remote host has, by `owner/name`; the first two are added already.
+const REMOTES: &[&str] = &[
+    "privue/privue-platform",
+    "privue/ecourts",
+    "privue/privue-agents",
+    "privue/notes",
+    "privue/privue-docs",
+];
 
-/// What abcd would make of `path` as a repository to add, with `repos` added already.
-pub fn check_repo(path: &str, repos: &[Repo]) -> abc_core::model::RepoCheck {
+/// Where abcd clones to (`add_repo.clone_dir`).
+pub const CLONE_DIR: &str = "~/code";
+
+/// What abcd would make of `path`, a folder or git URL, as a repository
+/// named `name`, with `repos` added already.
+pub fn check_repo(path: &str, name: &str, repos: &[Repo]) -> abc_core::model::RepoCheck {
     use abc_core::model::RepoCheck;
+    if crate::add_repo::is_url(path) {
+        let remote = path
+            .trim_end_matches('/')
+            .trim_end_matches(".git")
+            .rsplit(['/', ':'])
+            .take(2)
+            .collect::<Vec<_>>();
+        let remote = format!("{}/{}", remote.get(1).unwrap_or(&""), remote[0]);
+        return match REMOTES.iter().position(|r| *r == remote) {
+            None => RepoCheck::NotFound,
+            Some(i) if i < 2 => RepoCheck::AlreadyAdded {
+                name: remote.rsplit('/').next().unwrap_or("").into(),
+            },
+            Some(_) => {
+                let into = format!("{CLONE_DIR}/{name}");
+                if FOLDERS.contains(&format!("{into}/").as_str()) {
+                    RepoCheck::TargetExists { into }
+                } else {
+                    RepoCheck::Remote { into }
+                }
+            }
+        };
+    }
     let folder = path.trim_end_matches('/');
     if let Some(repo) = repos.iter().find(|r| r.path == Path::new(folder)) {
         return RepoCheck::AlreadyAdded {
@@ -561,21 +584,26 @@ pub fn check_repo(path: &str, repos: &[Repo]) -> abc_core::model::RepoCheck {
     }
     match folder {
         "~/code/privue-agents" => RepoCheck::Ready { worktrees: 3 },
-        "~/code/privue-agreements" => RepoCheck::Ready { worktrees: 1 },
+        "~/code/privue-agreements" | "~/work/ecourts" => RepoCheck::Ready { worktrees: 1 },
         _ if FOLDERS.contains(&format!("{folder}/").as_str()) => RepoCheck::NotGit,
         _ => RepoCheck::NotFound,
     }
 }
 
-/// The repository abcd would add at `path`: its main worktree, on main.
+/// The repository abcd would add from `path` (cloned into the clone folder
+/// for a URL): its main worktree, on main.
 pub fn added(path: &str, name: &str) -> Repo {
-    let folder = path.trim_end_matches('/');
+    let folder = if crate::add_repo::is_url(path) {
+        format!("{CLONE_DIR}/{name}")
+    } else {
+        path.trim_end_matches('/').to_string()
+    };
     Repo {
         name: name.into(),
-        path: PathBuf::from(folder),
+        path: PathBuf::from(&folder),
         state: RepoState::Present {
             worktrees: vec![Worktree {
-                path: PathBuf::from(folder),
+                path: PathBuf::from(&folder),
                 name: folder.rsplit('/').next().unwrap_or(name).into(),
                 is_main: true,
                 ..worktree(name, name, "main")
