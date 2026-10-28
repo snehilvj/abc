@@ -1,12 +1,14 @@
 //! Drawing. Everything here is a pure function of the app state and theme.
 
+pub mod catalog;
+pub mod label;
 pub mod sidebar;
 
 use abc_core::model::{Checks, Head, PrState, Review};
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::app::{App, Connection, Entry, Focus, StatusKind};
@@ -199,8 +201,13 @@ fn title<'a>(app: &'a App, theme: &Theme) -> Line<'a> {
         ]);
         if let Head::Branch(branch) = &w.head {
             spans.push(dot());
-            spans.push(Span::styled(format!("{} ", icons::BRANCH), theme.dim()));
-            spans.push(Span::styled(branch.as_str(), theme.text()));
+            spans.extend(label::labelled(
+                icons::BRANCH,
+                theme.dim(),
+                branch.as_str(),
+                theme.text(),
+                theme,
+            ));
         }
         if let Some(pr) = &w.pr {
             spans.push(dot());
@@ -221,11 +228,14 @@ fn title<'a>(app: &'a App, theme: &Theme) -> Line<'a> {
                     Checks::Failing => "checks failing",
                     Checks::Pending => "checks running",
                 };
-                let style = theme.style(sidebar::checks_color(checks, theme));
-                spans.extend([
-                    dot(),
-                    Span::styled(format!("{} {words}", sidebar::checks_icon(checks)), style),
-                ]);
+                spans.push(dot());
+                let color = sidebar::checks_color(checks, theme);
+                spans.extend(label::badge(
+                    sidebar::checks_icon(checks),
+                    words,
+                    color,
+                    theme,
+                ));
             }
             if let Some(review) = pr.review {
                 let (words, color) = match review {
@@ -313,74 +323,94 @@ impl Role {
     }
 }
 
+/// A centred notice line: an optional icon, the text, and how to style it.
+struct NoticeLine {
+    icon: Option<&'static str>,
+    text: String,
+    role: Role,
+}
+
+fn line(text: impl Into<String>, role: Role) -> NoticeLine {
+    NoticeLine {
+        icon: None,
+        text: text.into(),
+        role,
+    }
+}
+
+fn headline(icon: &'static str, text: impl Into<String>, role: Role) -> NoticeLine {
+    NoticeLine {
+        icon: Some(icon),
+        text: text.into(),
+        role,
+    }
+}
+
 /// A message that replaces the explorer and viewer, as centred lines.
-fn notice(app: &App) -> Option<Vec<(String, Role)>> {
-    let blank = || (String::new(), Role::Text);
+fn notice(app: &App) -> Option<Vec<NoticeLine>> {
+    let blank = || line("", Role::Text);
     let lines = match &app.connection {
         Connection::Starting => vec![],
         Connection::StartFailed => vec![
-            ("✗ abcd did not start within 3 seconds".into(), Role::Error),
+            headline(
+                icons::FAILURE,
+                "abcd did not start within 3 seconds",
+                Role::Error,
+            ),
             blank(),
-            ("Run  abc logs  in a shell to see why.".into(), Role::Text),
+            line("Run  abc logs  in a shell to see why.", Role::Text),
             blank(),
-            (
+            line(
                 keys_hint(app, &[(Action::Retry, "retry"), (Action::Quit, "quit")]),
                 Role::Dim,
             ),
         ],
         Connection::Incompatible { ours, theirs } => vec![
-            (
-                "! This abc is too old for the running abcd".into(),
+            headline(
+                icons::WARNING,
+                "This abc is too old for the running abcd",
                 Role::Warning,
             ),
             blank(),
-            (
+            line(
                 format!("abc speaks protocol {ours}, abcd speaks protocol {theirs}."),
                 Role::Text,
             ),
-            (
-                "Quit and reopen abc to use the new build.".into(),
-                Role::Text,
-            ),
+            line("Quit and reopen abc to use the new build.", Role::Text),
             blank(),
-            (keys_hint(app, &[(Action::Quit, "quit")]), Role::Dim),
+            line(keys_hint(app, &[(Action::Quit, "quit")]), Role::Dim),
         ],
         _ if app.repos.is_empty() => vec![
-            ("No repositories yet".into(), Role::Bold),
+            line("No repositories yet", Role::Bold),
             blank(),
-            (
+            line(
                 format!(
                     "Press {} to add one, or run",
                     key_label(app, Context::Global, Action::AddRepo)
                 ),
                 Role::Text,
             ),
-            ("abc repo add <path>".into(), Role::Accent),
-            ("in a shell.".into(), Role::Text),
+            line("abc repo add <path>", Role::Accent),
+            line("in a shell.", Role::Text),
         ],
         _ => match missing_repo_at_cursor(app) {
             Some(name) => {
                 let repo = app.repos.iter().find(|r| r.name == name)?;
+                let remove = key_label(app, Context::Global, Action::RemoveRepo);
                 vec![
-                    (format!("✗ {name} is missing"), Role::Error),
+                    headline(icons::FAILURE, format!("{name} is missing"), Role::Error),
                     blank(),
-                    (
+                    line(
                         format!("{} no longer exists.", repo.path.display()),
                         Role::Text,
                     ),
                     blank(),
-                    (
-                        format!(
-                            "{} removes it from abc.",
-                            key_label(app, Context::Global, Action::RemoveRepo)
-                        ),
-                        Role::Dim,
-                    ),
+                    line(format!("{remove} removes it from abc."), Role::Dim),
                 ]
             }
             None if app.current_worktree().is_none() => {
-                vec![(
-                    "Pick a worktree in the sidebar and press enter.".into(),
+                vec![line(
+                    "Pick a worktree in the sidebar and press enter.",
                     Role::Dim,
                 )]
             }
@@ -390,14 +420,20 @@ fn notice(app: &App) -> Option<Vec<(String, Role)>> {
     Some(lines)
 }
 
-fn centred(buf: &mut Buffer, g: &Geometry, lines: &[(String, Role)], theme: &Theme) {
+fn centred(buf: &mut Buffer, g: &Geometry, lines: &[NoticeLine], theme: &Theme) {
     let (y0, y1) = g.content_rows();
     let height = y1 - y0 + 1;
     let width = g.right - g.d1 - 1;
     let top = y0 + height.saturating_sub(lines.len() as u16) / 2;
-    for (i, (text, role)) in lines.iter().enumerate() {
-        let x = g.d1 + 1 + width.saturating_sub(text.chars().count() as u16) / 2;
-        buf.set_string(x, top + i as u16, text, role.style(theme));
+    for (i, l) in lines.iter().enumerate() {
+        let style = l.role.style(theme);
+        let spans = match l.icon {
+            Some(icon) => label::labelled(icon, style, l.text.as_str(), style, theme),
+            None => vec![Span::styled(l.text.as_str(), style)],
+        };
+        let line = Line::from(spans);
+        let x = g.d1 + 1 + width.saturating_sub(line.width() as u16) / 2;
+        buf.set_line(x, top + i as u16, &line, width);
     }
 }
 
@@ -516,44 +552,48 @@ fn keybar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     );
 }
 
-fn status_line(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
-    let (text, style) = if !app.pending.is_empty() {
-        (
+/// The status line's message: an icon by kind, then the text, in one colour.
+fn status_message(app: &App, theme: &Theme) -> Option<(Option<&'static str>, String, Color)> {
+    if !app.pending.is_empty() {
+        return Some((
+            None,
             format!("{} …", keys::Keys(app.pending.clone())),
-            theme.text(),
-        )
-    } else {
-        match &app.connection {
-            Connection::Starting => ("◌ starting abcd…".to_string(), theme.accent()),
-            Connection::StartFailed => {
-                ("✗ abcd did not start".to_string(), theme.style(theme.error))
-            }
-            Connection::Lost => (
-                "✗ lost abcd · reconnecting…".to_string(),
-                theme.style(theme.error),
-            ),
-            Connection::Incompatible { .. } => (
-                "! protocol mismatch".to_string(),
-                theme.style(theme.warning),
-            ),
-            Connection::Connected if app.stale_client && app.status.is_none() => (
-                "! this abc is older than the running abcd · quit and reopen abc".to_string(),
-                theme.style(theme.warning),
-            ),
-            Connection::Connected => match &app.status {
-                Some(s) => {
-                    let color = match s.kind {
-                        StatusKind::Info => theme.accent,
-                        StatusKind::Ok => theme.ok,
-                        StatusKind::Warning => theme.warning,
-                        StatusKind::Error => theme.error,
-                    };
-                    (s.text.clone(), theme.style(color))
-                }
-                None => (String::new(), theme.text()),
-            },
+            theme.text,
+        ));
+    }
+    let message = |icon, text: &str, color| Some((Some(icon), text.to_string(), color));
+    match &app.connection {
+        Connection::Starting => message(icons::SYNC, "starting abcd…", theme.accent),
+        Connection::StartFailed => message(icons::FAILURE, "abcd did not start", theme.error),
+        Connection::Lost => message(
+            icons::DISCONNECTED,
+            "lost abcd · reconnecting…",
+            theme.error,
+        ),
+        Connection::Incompatible { .. } => {
+            message(icons::WARNING, "protocol mismatch", theme.warning)
         }
-    };
+        Connection::Connected => match &app.status {
+            Some(s) => {
+                let (icon, color) = match s.kind {
+                    StatusKind::Info => (icons::INFO, theme.accent),
+                    StatusKind::Ok => (icons::SUCCESS, theme.ok),
+                    StatusKind::Warning => (icons::WARNING, theme.warning),
+                    StatusKind::Error => (icons::FAILURE, theme.error),
+                };
+                message(icon, &s.text, color)
+            }
+            None if app.stale_client => message(
+                icons::WARNING,
+                "this abc is older than the running abcd · quit and reopen abc",
+                theme.warning,
+            ),
+            None => None,
+        },
+    }
+}
+
+fn status_line(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     let counts = matches!(app.connection, Connection::Connected | Connection::Lost).then(|| {
         let worktrees: usize = app.repos.iter().map(|r| r.worktrees().len()).sum();
         let plural = |n: usize, word: &str| format!("{n} {word}{}", if n == 1 { "" } else { "s" });
@@ -573,22 +613,16 @@ fn status_line(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
         right_edge = g.right - counts.chars().count() as u16;
         buf.set_string(right_edge, g.bottom, counts, theme.dim());
     }
-    if !text.is_empty() {
-        let room = right_edge.saturating_sub(g.left + 2) as usize;
-        buf.set_string(
-            g.left + 1,
-            g.bottom,
-            format!(" {} ", trunc(&text, room.saturating_sub(2))),
-            style,
-        );
-    }
-}
-
-fn trunc(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        s.chars().take(n.saturating_sub(1)).chain(['…']).collect()
+    if let Some((icon, text, color)) = status_message(app, theme) {
+        let style = theme.style(color);
+        let mut spans = vec![Span::raw(" ")];
+        match icon {
+            Some(icon) => spans.extend(label::labelled(icon, style, text, style, theme)),
+            None => spans.push(Span::styled(text, style)),
+        }
+        spans.push(Span::raw(" "));
+        let room = right_edge.saturating_sub(g.left + 1);
+        buf.set_line(g.left + 1, g.bottom, &Line::from(spans), room);
     }
 }
 

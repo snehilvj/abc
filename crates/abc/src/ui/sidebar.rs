@@ -1,12 +1,13 @@
 //! The sidebar: repos and their worktrees, with git and PR status in columns
-//! that line up from row to row.
+//! that line up from row to row. Icons go through `label`.
 
 use std::path::Path;
 
 use abc_core::model::{Checks, GitStatus, Head, PrState, PullRequest, Repo, Worktree};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Color, Modifier};
 use ratatui::text::{Line, Span};
 
+use super::label::{self, BADGE_GAP, badge, blank, labelled, marker, no_icon, pad};
 use crate::app::SidebarStyle;
 use crate::icons;
 use crate::theme::Theme;
@@ -29,185 +30,161 @@ pub struct Row<'a> {
     pub line: Line<'a>,
 }
 
-/// Columns between two status columns. Nerd icons draw a little wider than
-/// their cell, so an icon and its count get a space too: `● 3  ↑ 2`.
-const GAP: usize = 2;
-
 /// The gap between two columns, if both are shown.
 fn gap(a: usize, b: usize) -> usize {
-    if a > 0 && b > 0 { GAP } else { 0 }
+    if a > 0 && b > 0 { BADGE_GAP } else { 0 }
 }
 
-/// Widths of the status columns, measured over every worktree shown, so each
-/// glyph sits in the same column on every row.
+/// Widths of the status columns in cells, measured over every worktree shown,
+/// so each badge sits in the same column on every row.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Columns {
     lock: bool,
-    pr: bool,
+    /// Widest `#number`; 0 when no worktree has a PR.
     pr_number: usize,
     checks: bool,
     changed: usize,
-    ahead: usize,
-    behind: usize,
-    local: bool,
+    /// Ahead and behind badges, or `local`.
+    upstream: usize,
+}
+
+/// Cells for the ahead/behind badges of one worktree.
+fn upstream_width(git: &GitStatus, icon: usize) -> usize {
+    if !git.upstream {
+        return "local".len();
+    }
+    let count = |n: u32| if n > 0 { icon + n.to_string().len() } else { 0 };
+    let (ahead, behind) = (count(git.ahead), count(git.behind));
+    ahead + behind + gap(ahead, behind)
 }
 
 impl Columns {
-    pub fn measure(repos: &[Repo]) -> Self {
+    pub fn measure(repos: &[Repo], theme: &Theme) -> Self {
+        let icon = label::icon_width(theme);
         let mut c = Self::default();
-        // Every icon is one cell, then a space, then the count.
-        let width = |n: u32| 2 + n.to_string().len();
-        for w in repos.iter().flat_map(|r| r.worktrees()) {
-            if w.missing {
-                continue;
-            }
+        for w in repos
+            .iter()
+            .flat_map(|r| r.worktrees())
+            .filter(|w| !w.missing)
+        {
             c.lock |= w.locked;
             if let Some(pr) = &w.pr {
-                c.pr = true;
                 c.pr_number = c.pr_number.max(format!("#{}", pr.number).len());
                 c.checks |=
                     pr.checks.is_some() && matches!(pr.state, PrState::Open | PrState::Draft);
             }
             if let Some(git) = &w.git {
                 if git.changed > 0 {
-                    c.changed = c.changed.max(width(git.changed));
+                    c.changed = c.changed.max(icon + git.changed.to_string().len());
                 }
-                if git.ahead > 0 {
-                    c.ahead = c.ahead.max(width(git.ahead));
-                }
-                if git.behind > 0 {
-                    c.behind = c.behind.max(width(git.behind));
-                }
-                c.local |= !git.upstream;
+                c.upstream = c.upstream.max(upstream_width(git, icon));
             }
         }
         c
     }
-
-    /// Ahead and behind, or `local` in their place.
-    fn upstream(&self) -> usize {
-        let both = self.ahead + self.behind + gap(self.ahead, self.behind);
-        both.max(if self.local { "local".len() } else { 0 })
-    }
-
-    fn status(&self) -> usize {
-        let upstream = self.upstream();
-        self.changed + upstream + gap(self.changed, upstream)
-    }
 }
 
-fn pad(text: String, width: usize, style: Style) -> Span<'static> {
-    let fill = width.saturating_sub(text.chars().count());
-    Span::styled(format!("{text}{}", " ".repeat(fill)), style)
-}
-
-/// Changed files, then ahead and behind, each in its own column.
-fn status_cells(git: Option<&GitStatus>, c: &Columns, theme: &Theme) -> Vec<Span<'static>> {
-    if c.status() == 0 {
+/// Changed files, then ahead/behind (or `local`), each in its own column.
+fn status_cells<'a>(git: Option<&GitStatus>, c: &Columns, theme: &Theme) -> Vec<Span<'a>> {
+    if c.changed + c.upstream == 0 {
         return Vec::new();
     }
-    let blank = GitStatus {
+    let blank_status = GitStatus {
         upstream: true,
         ..GitStatus::default()
     };
-    let git = git.unwrap_or(&blank);
-    let count = |n: u32, icon: &str| {
-        if n > 0 {
-            format!("{icon} {n}")
-        } else {
-            String::new()
-        }
-    };
+    let git = git.unwrap_or(&blank_status);
     let mut cells = Vec::new();
     if c.changed > 0 {
-        cells.push(pad(
-            count(git.changed, icons::CHANGED),
-            c.changed,
-            theme.style(theme.git_changed),
-        ));
+        let changed = if git.changed > 0 {
+            badge(
+                icons::CHANGED,
+                git.changed.to_string(),
+                theme.git_changed,
+                theme,
+            )
+        } else {
+            Vec::new()
+        };
+        cells.extend(pad(changed, c.changed));
     }
-    let upstream = c.upstream();
-    if upstream == 0 {
-        return cells;
-    }
-    if c.changed > 0 {
-        cells.push(Span::raw(" ".repeat(GAP)));
-    }
-    if !git.upstream {
-        cells.push(pad("local".into(), upstream, theme.dim()));
-        return cells;
-    }
-    let mut used = 0;
-    if c.ahead > 0 {
-        cells.push(pad(
-            count(git.ahead, icons::AHEAD),
-            c.ahead,
-            theme.style(theme.git_ahead),
-        ));
-        used += c.ahead;
-    }
-    if c.behind > 0 {
-        if c.ahead > 0 {
-            cells.push(Span::raw(" ".repeat(GAP)));
-            used += GAP;
+    if c.upstream > 0 {
+        if c.changed > 0 {
+            cells.push(blank(BADGE_GAP));
         }
-        cells.push(pad(
-            count(git.behind, icons::BEHIND),
-            c.behind,
-            theme.style(theme.git_behind),
-        ));
-        used += c.behind;
+        let mut upstream = Vec::new();
+        if !git.upstream {
+            upstream.push(Span::styled("local", theme.dim()));
+        } else {
+            if git.ahead > 0 {
+                upstream.extend(badge(
+                    icons::AHEAD,
+                    git.ahead.to_string(),
+                    theme.git_ahead,
+                    theme,
+                ));
+            }
+            if git.behind > 0 {
+                if git.ahead > 0 {
+                    upstream.push(blank(BADGE_GAP));
+                }
+                upstream.extend(badge(
+                    icons::BEHIND,
+                    git.behind.to_string(),
+                    theme.git_behind,
+                    theme,
+                ));
+            }
+        }
+        cells.extend(pad(upstream, c.upstream));
     }
-    cells.push(Span::raw(" ".repeat(upstream - used)));
     cells
 }
 
-/// Padlock, PR icon, number (right-aligned) and checks glyph, each in its own column.
-fn pr_cells(w: &Worktree, c: &Columns, theme: &Theme) -> Vec<Span<'static>> {
+/// Padlock, the PR badge (number right-aligned), then the checks icon, each in its own column.
+fn pr_cells<'a>(w: &Worktree, c: &Columns, theme: &Theme) -> Vec<Span<'a>> {
     let mut cells = Vec::new();
     if c.lock {
         cells.push(Span::styled(
             if w.locked { icons::LOCK } else { " " },
             theme.dim(),
         ));
-        if c.pr {
-            cells.push(Span::raw(" "));
+        if c.pr_number > 0 {
+            cells.push(blank(BADGE_GAP));
         }
     }
-    if !c.pr {
+    if c.pr_number == 0 {
         return cells;
     }
-    let checks_width = if c.checks { 2 } else { 0 };
+    let checks_width = if c.checks { BADGE_GAP + 1 } else { 0 };
     let Some(pr) = &w.pr else {
-        cells.push(Span::raw(" ".repeat(2 + c.pr_number + checks_width)));
+        cells.push(blank(label::icon_width(theme) + c.pr_number + checks_width));
         return cells;
     };
-    let style = theme.style(pr_color(pr.state, theme));
-    cells.push(Span::styled(format!("{} ", pr_icon(pr.state)), style));
-    cells.push(Span::styled(
-        format!("{:>width$}", format!("#{}", pr.number), width = c.pr_number),
-        style,
+    let number = format!("{:>width$}", format!("#{}", pr.number), width = c.pr_number);
+    cells.extend(badge(
+        pr_icon(pr.state),
+        number,
+        pr_color(pr.state, theme),
+        theme,
     ));
     if c.checks {
+        cells.push(blank(BADGE_GAP));
         match (pr.checks, pr.state) {
             (Some(checks), PrState::Open | PrState::Draft) => {
-                cells.push(Span::raw(" "));
                 cells.push(Span::styled(
                     checks_icon(checks),
                     theme.style(checks_color(checks, theme)),
                 ));
             }
-            _ => cells.push(Span::raw("  ")),
+            _ => cells.push(blank(1)),
         }
     }
     cells
 }
 
-fn missing(theme: &Theme) -> Vec<Span<'static>> {
-    vec![
-        Span::styled(format!("{} ", icons::ALERT), theme.style(theme.warning)),
-        Span::styled("missing", theme.dim()),
-    ]
+fn missing<'a>(theme: &Theme) -> Vec<Span<'a>> {
+    badge(icons::WARNING, "missing", theme.warning, theme)
 }
 
 fn repo_line<'a>(repo: &'a Repo, width: u16, theme: &Theme) -> Line<'a> {
@@ -216,11 +193,8 @@ fn repo_line<'a>(repo: &'a Repo, width: u16, theme: &Theme) -> Line<'a> {
     } else {
         (theme.accent(), theme.bold(), Vec::new())
     };
-    let left = vec![
-        Span::raw("  "),
-        Span::styled(format!("{} ", icons::REPO), icon),
-        Span::styled(repo.name.as_str(), name),
-    ];
+    let mut left = vec![blank(2)];
+    left.extend(labelled(icons::REPO, icon, repo.name.as_str(), name, theme));
     fit(left, right, width)
 }
 
@@ -231,19 +205,29 @@ fn worktree_lines<'a>(
     o: &Options,
     theme: &Theme,
 ) -> Vec<Line<'a>> {
-    let mut left = vec![
-        Span::raw("  "),
-        Span::styled(if current { "▸ " } else { "  " }, theme.accent()),
-    ];
-    if w.is_main {
-        left.push(Span::styled(format!("{} ", icons::HOME), theme.dim()));
+    // The marker column holds the current-worktree icon; names line up after it.
+    let mut left = vec![blank(2)];
+    if current {
+        left.extend(marker(icons::CURRENT, theme.accent(), theme));
+    } else {
+        left.push(no_icon(theme));
     }
     let name_style = match (current, w.missing) {
         (true, _) => theme.accent().add_modifier(Modifier::BOLD),
         (false, true) => theme.dim(),
         (false, false) => theme.text(),
     };
-    left.push(Span::styled(w.name.as_str(), name_style));
+    if w.is_main {
+        left.extend(labelled(
+            icons::HOME,
+            theme.dim(),
+            w.name.as_str(),
+            name_style,
+            theme,
+        ));
+    } else {
+        left.push(Span::styled(w.name.as_str(), name_style));
+    }
 
     if o.style == SidebarStyle::Compact {
         let right = if w.missing {
@@ -252,7 +236,7 @@ fn worktree_lines<'a>(
             let mut right = status_cells(w.git.as_ref(), c, theme);
             let pr = pr_cells(w, c, theme);
             if !right.is_empty() && !pr.is_empty() {
-                right.push(Span::raw("  "));
+                right.push(blank(BADGE_GAP));
             }
             right.extend(pr);
             right
@@ -269,12 +253,9 @@ fn worktree_lines<'a>(
         Head::Detached(sha) => (icons::COMMIT, format!("{sha} detached")),
         Head::Branch(branch) => (icons::BRANCH, branch.clone()),
     };
-    // The branch sits under the worktree's name, after its icon.
-    let second = vec![
-        Span::raw("    "),
-        Span::styled(format!("{icon} "), theme.dim()),
-        Span::styled(head, theme.dim()),
-    ];
+    // The branch line starts under the worktree's name.
+    let mut second = vec![blank(2), no_icon(theme)];
+    second.extend(labelled(icon, theme.dim(), head, theme.dim(), theme));
     let status = if w.missing {
         Vec::new()
     } else {
@@ -290,7 +271,7 @@ pub fn rows<'a>(
     o: &Options,
     theme: &Theme,
 ) -> Vec<Row<'a>> {
-    let c = Columns::measure(repos);
+    let c = Columns::measure(repos, theme);
     let gap = |rows: &mut Vec<Row<'a>>, n: u16| {
         rows.extend((0..n).map(|_| Row {
             entry: None,
@@ -359,20 +340,21 @@ pub fn checks_icon(checks: Checks) -> &'static str {
     }
 }
 
-/// PR icon and number in the state's colour, for the title bar.
+/// The PR badge for the title bar: icon and `#number` in the state's colour.
 pub fn pr_badge<'a>(pr: &PullRequest, theme: &Theme) -> Vec<Span<'a>> {
-    let style = theme.style(pr_color(pr.state, theme));
-    vec![
-        Span::styled(format!("{} ", pr_icon(pr.state)), style),
-        Span::styled(format!("#{}", pr.number), style),
-    ]
+    badge(
+        pr_icon(pr.state),
+        format!("#{}", pr.number),
+        pr_color(pr.state, theme),
+        theme,
+    )
 }
 
 /// Lays `left` and `right` out across `width`, with `right` ending one column
 /// in from the edge. The last left span (a name) gives way first.
 fn fit<'a>(left: Vec<Span<'a>>, right: Vec<Span<'a>>, width: u16) -> Line<'a> {
     let width = width as usize;
-    let right_width: usize = right.iter().map(Span::width).sum();
+    let right_width = label::width(&right);
     let room = width.saturating_sub(right_width + if right.is_empty() { 1 } else { 2 });
     let mut used = 0;
     let mut kept = Vec::new();
@@ -393,11 +375,9 @@ fn fit<'a>(left: Vec<Span<'a>>, right: Vec<Span<'a>>, width: u16) -> Line<'a> {
         }
     }
     if !right.is_empty() {
-        kept.push(Span::raw(
-            " ".repeat(width.saturating_sub(used + right_width + 1)),
-        ));
+        kept.push(blank(width.saturating_sub(used + right_width + 1)));
         kept.extend(right);
-        kept.push(Span::raw(" "));
+        kept.push(blank(1));
     }
     Line::from(kept)
 }
@@ -421,26 +401,54 @@ mod tests {
             .collect()
     }
 
-    /// The character column of `glyph` in each line that has it.
-    fn columns_of(lines: &[String], glyph: &str) -> Vec<usize> {
-        let glyph = glyph.chars().next().unwrap();
+    fn is_icon(c: char) -> bool {
+        ('\u{e000}'..='\u{f8ff}').contains(&c)
+    }
+
+    /// The character columns of any of `glyphs`, one per line that has one.
+    fn columns_of(lines: &[String], glyphs: &[&str]) -> Vec<usize> {
+        let glyphs: Vec<char> = glyphs.iter().map(|g| g.chars().next().unwrap()).collect();
         lines
             .iter()
-            .filter_map(|l| l.chars().position(|c| c == glyph))
+            .filter_map(|l| l.chars().position(|c| glyphs.contains(&c)))
             .collect()
     }
 
+    fn same(cols: &[usize]) -> bool {
+        cols.windows(2).all(|w| w[0] == w[1])
+    }
+
     #[test]
-    fn git_status_glyphs_line_up_in_columns() {
-        let lines = texts(&fake::repos(), SidebarStyle::Detailed);
-        for glyph in [CHANGED, AHEAD, BEHIND] {
-            let cols = columns_of(&lines, glyph);
-            assert!(cols.len() >= 2, "{glyph} appears on several rows");
-            assert!(
-                cols.windows(2).all(|w| w[0] == w[1]),
-                "{glyph} columns differ: {cols:?}"
-            );
+    fn no_icon_touches_its_label() {
+        let gap = Theme::dark().icon_gap;
+        for style in [SidebarStyle::Detailed, SidebarStyle::Compact] {
+            for line in texts(&fake::repos_with_variants(), style) {
+                let chars: Vec<char> = line.chars().collect();
+                for (i, c) in chars.iter().enumerate().filter(|(_, c)| is_icon(**c)) {
+                    let after = &chars[i + 1..(i + 1 + gap).min(chars.len())];
+                    assert!(
+                        after.iter().all(|c| *c == ' '),
+                        "{c:?} touches its label in {line:?}"
+                    );
+                }
+            }
         }
+    }
+
+    #[test]
+    fn status_badges_line_up_in_columns() {
+        let lines = texts(&fake::repos(), SidebarStyle::Detailed);
+        let changed = columns_of(&lines, &[CHANGED]);
+        assert!(changed.len() >= 2 && same(&changed), "changed: {changed:?}");
+        // Ahead and behind share one column, like the different PR icons do.
+        let upstream = columns_of(&lines, &[AHEAD, BEHIND]);
+        assert!(
+            upstream.len() >= 3 && same(&upstream),
+            "upstream: {upstream:?}"
+        );
+        let prs = columns_of(&lines, &[PR_OPEN, PR_DRAFT, PR_MERGED]);
+        assert_eq!(prs.len(), 4);
+        assert!(same(&prs), "pr icons: {prs:?}");
     }
 
     #[test]
@@ -461,31 +469,23 @@ mod tests {
             })
             .collect();
         assert_eq!(ends.len(), 4);
-        assert!(
-            ends.windows(2).all(|w| w[0] == w[1]),
-            "number ends differ: {ends:?}"
-        );
-        let checks: Vec<usize> = [CHECKS_PASSING, CHECKS_FAILING, CHECKS_PENDING]
-            .iter()
-            .flat_map(|g| columns_of(&lines, g))
-            .collect();
+        assert!(same(&ends), "number ends differ: {ends:?}");
+        let checks = columns_of(&lines, &[CHECKS_PASSING, CHECKS_FAILING, CHECKS_PENDING]);
         assert_eq!(checks.len(), 3);
-        assert!(
-            checks.windows(2).all(|w| w[0] == w[1]),
-            "checks columns differ: {checks:?}"
-        );
+        assert!(same(&checks), "checks columns differ: {checks:?}");
     }
 
     #[test]
     fn repos_are_one_row_apart_and_worktrees_follow_each_other() {
         let lines = texts(&fake::repos(), SidebarStyle::Detailed);
-        assert_eq!(lines[0], format!("  {REPO} privue-platform"));
-        assert!(lines[1].starts_with("  ▸ gst-check"));
-        assert!(lines[2].starts_with(&format!("    {BRANCH} feat/gst-check")));
-        assert!(lines[3].starts_with("    gst-rounding"));
+        assert_eq!(lines[0], format!("  {REPO}  privue-platform"));
+        assert!(lines[1].starts_with(&format!("  {CURRENT}  gst-check")));
+        // The branch starts under the name, with its own icon.
+        assert!(lines[2].starts_with(&format!("     {BRANCH}  feat/gst-check")));
+        assert!(lines[3].starts_with("     gst-rounding"));
         let ecourts = lines
             .iter()
-            .position(|l| l.starts_with(&format!("  {REPO} ecourts")))
+            .position(|l| l.starts_with(&format!("  {REPO}  ecourts")))
             .unwrap();
         assert_eq!(lines[ecourts - 1], "");
         assert!(!lines[ecourts - 2].is_empty());
@@ -502,6 +502,23 @@ mod tests {
     }
 
     #[test]
+    fn branch_names_are_not_cut_off() {
+        let lines = texts(&fake::repos(), SidebarStyle::Detailed);
+        for branch in [
+            "feat/gst-check",
+            "fix/gst-rounding",
+            "fix/ledger-round",
+            "feat/gst-lookup",
+            "feat/ocr-retry",
+        ] {
+            assert!(
+                lines.iter().any(|l| l.contains(branch)),
+                "{branch} is cut off"
+            );
+        }
+    }
+
+    #[test]
     fn a_long_name_gives_way_to_the_pr_column() {
         let mut repos = fake::repos();
         if let abc_core::model::RepoState::Present { worktrees } = &mut repos[0].state {
@@ -510,19 +527,19 @@ mod tests {
         let lines = texts(&repos, SidebarStyle::Detailed);
         assert_eq!(lines[1].chars().count(), 38);
         assert!(lines[1].contains('…'));
-        assert!(lines[1].ends_with(&format!("#142 {CHECKS_PASSING} ")));
+        assert!(lines[1].ends_with(&format!("#142  {CHECKS_PASSING} ")));
     }
 
     #[test]
     fn a_missing_repo_says_so_on_the_right() {
         let lines = texts(&fake::repos_with_variants(), SidebarStyle::Detailed);
         let line = lines.iter().find(|l| l.contains("old-scraper")).unwrap();
-        assert!(line.ends_with(&format!("{ALERT} missing ")), "{line:?}");
+        assert!(line.ends_with(&format!("{WARNING}  missing ")), "{line:?}");
         assert_eq!(line.chars().count(), 38);
     }
 
     #[test]
-    fn merged_and_closed_prs_show_no_checks_glyph() {
+    fn merged_and_closed_prs_show_no_checks_icon() {
         let lines = texts(&fake::repos_with_variants(), SidebarStyle::Detailed);
         for number in ["#141", "#97"] {
             let line = lines.iter().find(|l| l.contains(number)).unwrap();
@@ -535,7 +552,6 @@ mod tests {
         let lines = texts(&fake::repos(), SidebarStyle::Compact);
         // 2 repos + 7 worktrees + 1 blank row between the repos.
         assert_eq!(lines.len(), 10);
-        assert!(lines[1].starts_with("  ▸ gst-check"));
-        assert!(lines[1].contains(&format!("{CHANGED} 3")));
+        assert!(lines[1].starts_with(&format!("  {CURRENT}  gst-")));
     }
 }

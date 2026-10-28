@@ -35,6 +35,9 @@ pub struct Theme {
     pub pr_draft: Color,
     pub pr_merged: Color,
     pub pr_closed: Color,
+    /// Blank cells between an icon and its label. Terminals that draw Nerd Font
+    /// glyphs into the next cell need 2; the rest look right with 1.
+    pub icon_gap: usize,
 }
 
 const fn rgb(hex: u32) -> Color {
@@ -60,6 +63,7 @@ impl Theme {
             pr_draft: rgb(0x7c8894),
             pr_merged: rgb(0xb18cf0),
             pr_closed: rgb(0xec716b),
+            icon_gap: 2,
         }
     }
 
@@ -81,6 +85,7 @@ impl Theme {
             pr_draft: rgb(0x77828c),
             pr_merged: rgb(0x7546c4),
             pr_closed: rgb(0xc0362c),
+            icon_gap: 2,
         }
     }
 
@@ -102,6 +107,7 @@ impl Theme {
             pr_draft: Color::DarkGray,
             pr_merged: Color::Magenta,
             pr_closed: Color::Red,
+            icon_gap: 2,
         }
     }
 

@@ -175,7 +175,7 @@ impl App {
                     .unwrap_or_default();
                 self.status = Some(Status::new(
                     StatusKind::Error,
-                    format!("✗ {keys} isn't bound · {help} lists the keys"),
+                    format!("{keys} isn't bound · {help} lists the keys"),
                 ));
             }
             Feed::Pending(_) | Feed::Ignored => {}
@@ -371,7 +371,7 @@ mod tests {
         press(&mut app, "space x");
         assert_eq!(
             app.status.unwrap().text,
-            "✗ space x isn't bound · ? lists the keys"
+            "space x isn't bound · ? lists the keys"
         );
     }
 

@@ -7,7 +7,8 @@ pub const MIN_HEIGHT: u16 = 20;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Widths {
     pub sidebar: u16,
-    pub explorer: u16,
+    /// None: as wide as the sidebar.
+    pub explorer: Option<u16>,
     pub viewer_min: u16,
     pub explorer_min: u16,
 }
@@ -16,7 +17,7 @@ impl Default for Widths {
     fn default() -> Self {
         Self {
             sidebar: 38,
-            explorer: 28,
+            explorer: None,
             viewer_min: 40,
             explorer_min: 20,
         }
@@ -38,8 +39,9 @@ pub fn columns(width: u16, w: Widths) -> Columns {
     let inner = width.saturating_sub(4);
     let sidebar = w.sidebar.min(inner);
     let rest = inner - sidebar;
-    let explorer = if rest >= w.explorer + w.viewer_min {
-        w.explorer
+    let wanted = w.explorer.unwrap_or(w.sidebar);
+    let explorer = if rest >= wanted + w.viewer_min {
+        wanted
     } else {
         rest.saturating_sub(w.viewer_min)
             .max(w.explorer_min)
@@ -69,19 +71,30 @@ mod tests {
     }
 
     #[test]
+    fn the_explorer_is_as_wide_as_the_sidebar_unless_set() {
+        assert_eq!(columns(140, Widths::default()), cols(38, 38, 60));
+        let set = Widths {
+            explorer: Some(28),
+            ..Widths::default()
+        };
+        assert_eq!(columns(140, set), cols(38, 28, 70));
+    }
+
+    #[test]
     fn full_width_uses_the_configured_widths() {
-        assert_eq!(columns(120, Widths::default()), cols(38, 28, 50));
+        assert_eq!(columns(120, Widths::default()), cols(38, 38, 40));
     }
 
     #[test]
     fn the_viewer_shrinks_first() {
-        // 38 + 28 + 40 + 4 = 110: the narrowest width that keeps the explorer whole.
-        assert_eq!(columns(110, Widths::default()), cols(38, 28, 40));
+        // 38 + 38 + 40 + 4 = 120: the narrowest width that keeps the explorer whole.
+        assert_eq!(columns(130, Widths::default()), cols(38, 38, 50));
+        assert_eq!(columns(120, Widths::default()), cols(38, 38, 40));
     }
 
     #[test]
     fn then_the_explorer_shrinks_to_its_minimum() {
-        assert_eq!(columns(104, Widths::default()), cols(38, 22, 40));
+        assert_eq!(columns(110, Widths::default()), cols(38, 28, 40));
         assert_eq!(columns(102, Widths::default()), cols(38, 20, 40));
     }
 

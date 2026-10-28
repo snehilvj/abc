@@ -19,6 +19,8 @@ use crate::ui;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Screen {
     Frame,
+    /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
+    Icons,
     /// Panics on the first key, to check the terminal comes back clean.
     #[value(hide = true)]
     Panic,
@@ -57,7 +59,7 @@ fn preset(name: &'static str, app: App) -> Preset {
 pub fn presets(screen: Screen) -> Vec<Preset> {
     match screen {
         Screen::Frame => frame(),
-        Screen::Panic => Vec::new(),
+        Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
 
@@ -117,17 +119,14 @@ pub fn frame() -> Vec<Preset> {
             },
         ),
         preset("missing", missing),
-        preset(
-            "added",
-            with_status(StatusKind::Ok, "✓ added privue-agents"),
-        ),
+        preset("added", with_status(StatusKind::Ok, "added privue-agents")),
         preset(
             "gh-off",
             App {
                 repos: fake::repos_without_prs(),
                 ..with_status(
                     StatusKind::Warning,
-                    "! gh is not logged in · PR status is off · run gh auth login",
+                    "gh is not logged in · PR status is off · run gh auth login",
                 )
             },
         ),
@@ -135,12 +134,12 @@ pub fn frame() -> Vec<Preset> {
             "config-error",
             with_status(
                 StatusKind::Error,
-                "✗ config.toml line 14: unknown key sidebar.widht · keeping the last good settings",
+                "config.toml line 14: unknown key sidebar.widht · keeping the last good settings",
             ),
         ),
         preset(
             "restarted",
-            with_status(StatusKind::Info, "↻ abcd restarted · build 0.1.0+3f9a2c1e"),
+            with_status(StatusKind::Info, "abcd restarted · build 0.1.0+3f9a2c1e"),
         ),
         preset(
             "disconnected",
@@ -171,8 +170,10 @@ pub fn frame() -> Vec<Preset> {
 }
 
 pub fn run(args: Args) -> Result<()> {
-    if args.screen == Screen::Panic {
-        return run_panic();
+    match args.screen {
+        Screen::Panic => return run_panic(),
+        Screen::Icons => return run_catalog(Theme::resolve(args.theme)),
+        Screen::Frame => {}
     }
     let presets = presets(args.screen);
     let names = || {
@@ -242,6 +243,27 @@ fn set_title(screen: Screen, state: &str) {
         stdout(),
         SetTitle(format!("abc gallery {screen} · {state}"))
     );
+}
+
+fn run_catalog(theme: Theme) -> Result<()> {
+    let mut terminal = ratatui::try_init().context("setting up the terminal")?;
+    set_title(Screen::Icons, "gap 1 and 2");
+    let result = (|| -> Result<()> {
+        loop {
+            terminal.draw(|frame| {
+                let area = frame.area();
+                ui::catalog::draw(frame.buffer_mut(), area, &theme);
+            })?;
+            if let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press
+                && matches!(key.code, KeyCode::Char('q') | KeyCode::Esc)
+            {
+                return Ok(());
+            }
+        }
+    })();
+    ratatui::restore();
+    result
 }
 
 fn run_panic() -> Result<()> {
