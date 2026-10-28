@@ -195,6 +195,16 @@ impl Explorer {
         self.state.borrow_mut().key_up();
     }
 
+    /// Scrolls the tree `lines` down, or up when negative, leaving the selection.
+    pub fn scroll(&self, lines: isize) {
+        let mut state = self.state.borrow_mut();
+        if lines >= 0 {
+            state.scroll_down(lines.unsigned_abs());
+        } else {
+            state.scroll_up(lines.unsigned_abs());
+        }
+    }
+
     pub fn first(&self) {
         self.state.borrow_mut().select_first();
     }

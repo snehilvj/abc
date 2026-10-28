@@ -1,0 +1,43 @@
+//! What abc asks of the terminal while it runs, beyond ratatui's raw mode and
+//! full screen: pasted text in one piece, and the mouse's clicks and wheel,
+//! so the wheel scrolls abc's panes rather than the terminal's history. All
+//! of it is undone however abc leaves, after a panic too.
+
+use std::io::{Write, stdout};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use ratatui::crossterm::event::{DisableBracketedPaste, EnableBracketedPaste};
+use ratatui::crossterm::execute;
+
+/// Clicks and the wheel (1000), reported in SGR form (1006). Not the
+/// crossterm default, which also reports every move of the mouse.
+const MOUSE_ON: &str = "\x1b[?1000h\x1b[?1006h";
+const MOUSE_OFF: &str = "\x1b[?1006l\x1b[?1000l";
+
+static MOUSE: AtomicBool = AtomicBool::new(false);
+
+/// Takes pastes, and the mouse if `mouse`, until [`release`].
+pub fn take(mouse: bool) {
+    let _ = execute!(stdout(), EnableBracketedPaste);
+    set_mouse(mouse);
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        release();
+        previous(info);
+    }));
+}
+
+/// Takes the mouse from the terminal, or gives it back.
+pub fn set_mouse(on: bool) {
+    if MOUSE.swap(on, Ordering::SeqCst) != on {
+        let mut out = stdout();
+        let _ = out.write_all(if on { MOUSE_ON } else { MOUSE_OFF }.as_bytes());
+        let _ = out.flush();
+    }
+}
+
+/// Gives the terminal back what [`take`] took.
+pub fn release() {
+    set_mouse(false);
+    let _ = execute!(stdout(), DisableBracketedPaste);
+}

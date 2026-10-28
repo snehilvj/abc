@@ -18,8 +18,8 @@ use abc_core::protocol::{
 };
 use abc_core::settings::{self, Settings};
 use anyhow::{Context as _, Result};
-use ratatui::crossterm::event::{self, DisableBracketedPaste, Event, KeyEventKind};
-use ratatui::crossterm::execute;
+use ratatui::crossterm::event::{self, Event, KeyEventKind, MouseEventKind};
+use ratatui::layout::Rect;
 use tokio::runtime::Runtime;
 
 use crate::app::{App, Cmd, Msg, SidebarStyle, Status, StatusKind};
@@ -84,7 +84,7 @@ pub fn run(paths: Paths) -> Result<()> {
     ));
 
     let mut terminal = ratatui::try_init().context("setting up the terminal")?;
-    crate::gallery::paste_in_one_piece();
+    crate::term::take(settings.mouse.enabled);
     let result = (|| -> Result<()> {
         let mut client: Option<(Arc<Client>, Replies)> = None;
         let mut visited: Option<PathBuf> = None;
@@ -123,6 +123,20 @@ pub fn run(paths: Paths) -> Result<()> {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => app.handle_key(key),
                     Event::Paste(text) => app.paste(&text),
+                    Event::Mouse(mouse) => {
+                        let down = match mouse.kind {
+                            MouseEventKind::ScrollDown => Some(true),
+                            MouseEventKind::ScrollUp => Some(false),
+                            _ => None,
+                        };
+                        let size = terminal.size()?;
+                        let area = Rect::new(0, 0, size.width, size.height);
+                        if let Some(down) = down
+                            && let Some(pane) = ui::pane_at(area, &app, mouse.column, mouse.row)
+                        {
+                            app.wheel(pane, down);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -205,7 +219,7 @@ pub fn run(paths: Paths) -> Result<()> {
             }
         }
     })();
-    let _ = execute!(stdout(), DisableBracketedPaste);
+    crate::term::release();
     ratatui::restore();
     // abcd keeps running; the runtime's tasks end here.
     runtime.shutdown_background();
@@ -262,6 +276,7 @@ fn reload(paths: &Paths, app: &mut App, theme: &mut Theme) {
                 *theme = Theme::resolve(theme_choice(&settings.theme, app));
             }
             apply(&settings, app, theme);
+            crate::term::set_mouse(settings.mouse.enabled);
             app.status = Some(Status::new(StatusKind::Info, "settings reloaded"));
         }
         Err(errors) => {
@@ -290,6 +305,7 @@ fn apply(settings: &Settings, app: &mut App, theme: &mut Theme) {
     app.repo_gap = settings.sidebar.repo_gap;
     app.worktree_gap = settings.sidebar.worktree_gap;
     theme.icon_gap = usize::from(settings.icons.gap);
+    app.scroll_lines = settings.mouse.scroll_lines.max(1);
     app.switcher_rows = settings.switcher.rows.max(1);
     app.find.rows = settings.find.rows.max(1);
     app.find.max_lines = settings.find.max_lines;

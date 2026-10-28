@@ -15,6 +15,7 @@ pub mod layout;
 pub mod motion;
 pub mod search;
 pub mod switcher;
+pub mod term;
 pub mod theme;
 pub mod tui;
 pub mod ui;

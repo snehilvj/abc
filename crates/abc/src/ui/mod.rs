@@ -830,10 +830,43 @@ fn ltrunc(s: &str, n: usize) -> String {
     }
 }
 
+/// The pane at column `x`, row `y` of `area`, as `app` is drawn there: for
+/// the mouse wheel. Nothing over borders, headers, the key bar, or a notice.
+pub fn pane_at(area: Rect, app: &App, x: u16, y: u16) -> Option<Focus> {
+    if layout::too_small(area.width, area.height) {
+        return None;
+    }
+    let g = Geometry::new(area, layout::columns(area.width, app.widths), split(app));
+    let (top, bottom) = g.sidebar_rows();
+    if !(top..=bottom).contains(&y) || x <= g.left || x >= g.right {
+        return None;
+    }
+    let (content, _) = g.content_rows();
+    match x {
+        x if x < g.d1 => Some(Focus::Sidebar),
+        _ if !g.split || y < content => None,
+        x if x > g.d1 && x < g.d2 => Some(Focus::Explorer),
+        x if x > g.d2 => Some(Focus::Viewer),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::gallery::{self, Screen};
+
+    #[test]
+    fn the_pane_under_the_mouse_is_found_as_drawn() {
+        let app = gallery::presets(Screen::Frame).remove(0).app;
+        let area = Rect::new(0, 0, 120, 40);
+        assert_eq!(pane_at(area, &app, 5, 10), Some(Focus::Sidebar));
+        assert_eq!(pane_at(area, &app, 50, 10), Some(Focus::Explorer));
+        assert_eq!(pane_at(area, &app, 100, 10), Some(Focus::Viewer));
+        assert_eq!(pane_at(area, &app, 39, 10), None, "the divider");
+        assert_eq!(pane_at(area, &app, 100, 2), None, "the viewer's header");
+        assert_eq!(pane_at(area, &app, 100, 38), None, "the key bar");
+    }
 
     fn keybar(screen: Screen, state: &str) -> Vec<String> {
         let preset = gallery::presets(screen)

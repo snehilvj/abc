@@ -7,8 +7,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow};
 use ratatui::crossterm::event::{
-    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind,
-    KeyModifiers,
+    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
 };
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::SetTitle;
@@ -698,7 +697,7 @@ pub fn run(args: Args) -> Result<()> {
     // Ask the terminal for its background before raw mode takes over the input.
     let theme = Theme::resolve(args.theme);
     let mut terminal = ratatui::try_init().context("setting up the terminal")?;
-    paste_in_one_piece();
+    crate::term::take(true);
     let result = (|| -> Result<()> {
         let (tx, rx) = mpsc::channel();
         let mut app = presets[index].app.clone();
@@ -742,6 +741,23 @@ pub fn run(args: Args) -> Result<()> {
                         serve(&mut app, &tx);
                         continue;
                     }
+                    Event::Mouse(mouse) => {
+                        let size = terminal.size()?;
+                        let screen = Rect::new(0, 0, size.width, size.height);
+                        let area = match presets[index].size {
+                            Some((w, h)) => Rect::new(0, 0, w, h).clamp(screen),
+                            None => screen,
+                        };
+                        let down = match mouse.kind {
+                            MouseEventKind::ScrollDown => true,
+                            MouseEventKind::ScrollUp => false,
+                            _ => continue,
+                        };
+                        if let Some(pane) = ui::pane_at(area, &app, mouse.column, mouse.row) {
+                            app.wheel(pane, down);
+                        }
+                        continue;
+                    }
                     _ => continue,
                 };
                 if key.kind != KeyEventKind::Press {
@@ -765,20 +781,9 @@ pub fn run(args: Args) -> Result<()> {
             }
         }
     })();
-    let _ = execute!(stdout(), DisableBracketedPaste);
+    crate::term::release();
     ratatui::restore();
     result
-}
-
-/// Asks the terminal to send pasted text in one piece rather than as keys,
-/// and to stop again however abc leaves, after a panic too.
-pub(crate) fn paste_in_one_piece() {
-    let _ = execute!(stdout(), EnableBracketedPaste);
-    let previous = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        let _ = execute!(stdout(), DisableBracketedPaste);
-        previous(info);
-    }));
 }
 
 fn set_title(screen: Screen, state: &str) {

@@ -39,6 +39,9 @@ pub struct Settings {
     pub viewer: Viewer,
 
     #[config(nested)]
+    pub mouse: Mouse,
+
+    #[config(nested)]
     pub add_repo: AddRepo,
 
     #[config(nested)]
@@ -132,6 +135,20 @@ pub struct Viewer {
     /// Larger files aren't opened, in megabytes.
     #[config(default = 5)]
     pub max_file_size_mb: u64,
+}
+
+/// The mouse: its wheel scrolls the pane under it.
+#[derive(Debug, Clone, Config)]
+#[config(layer_attr(serde(deny_unknown_fields)))]
+pub struct Mouse {
+    /// Whether abc takes the mouse from the terminal. Most terminals then
+    /// select text only with a key held (Shift; Option in iTerm2); off, the
+    /// terminal selects as usual and its wheel scrolls nothing in abc.
+    #[config(default = true)]
+    pub enabled: bool,
+    /// Lines a notch of the wheel scrolls.
+    #[config(default = 3)]
+    pub scroll_lines: usize,
 }
 
 /// Adding a repository: space r a, and abc repo add.
