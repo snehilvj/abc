@@ -65,12 +65,28 @@ fn commit(dir: &Path, message: &str) -> io::Result<()> {
     git(dir, &["commit", "-q", "-m", message])
 }
 
-/// Makes the fixtures in `root`, replacing any there.
+/// The file fixtures leave in their folder, so a later run knows it's
+/// theirs to replace.
+const MARKER: &str = ".abc-fixtures";
+
+/// Makes the fixtures in `root`, replacing any made there before. A folder
+/// that isn't empty and wasn't made by fixtures is refused, never deleted.
 pub fn generate(root: &Path) -> io::Result<Vec<Fixture>> {
     if root.exists() {
+        let empty = std::fs::read_dir(root)?.next().is_none();
+        if !empty && !root.join(MARKER).exists() {
+            return Err(io::Error::other(format!(
+                "{} isn't empty and wasn't made by abc's fixtures: choose another folder",
+                root.display()
+            )));
+        }
         std::fs::remove_dir_all(root)?;
     }
     std::fs::create_dir_all(root)?;
+    std::fs::write(
+        root.join(MARKER),
+        "Made by abc's fixtures; run again to replace.\n",
+    )?;
     let root = std::fs::canonicalize(root)?;
     Ok(vec![
         shop(&root)?,
@@ -328,6 +344,27 @@ fn old_tool(root: &Path) -> io::Result<Fixture> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_folder_fixtures_didnt_make_is_never_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let precious = dir.path().join("code");
+        std::fs::create_dir_all(&precious).unwrap();
+        std::fs::write(precious.join("work.txt"), "keep me").unwrap();
+        let refused = generate(&precious).unwrap_err();
+        assert!(
+            refused
+                .to_string()
+                .contains("wasn't made by abc's fixtures"),
+            "{refused}"
+        );
+        assert!(precious.join("work.txt").exists(), "untouched");
+
+        let empty = dir.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(generate(&empty).is_ok(), "an empty folder is fine");
+        assert!(generate(&empty).is_ok(), "and fixtures' own, again");
+    }
 
     #[test]
     fn fixtures_are_made_afresh_each_time() {
