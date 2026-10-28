@@ -113,9 +113,9 @@ impl Explorer {
     /// in the viewer that went is no longer marked.
     pub fn update<S: AsRef<str>>(&mut self, files: &[S]) {
         let next = Self::new(files);
-        let exists = |path: &[String]| {
-            next.folders.contains(path) || next.files().iter().any(|f| *f == path.join("/"))
-        };
+        let paths: HashSet<String> = next.files().into_iter().collect();
+        let exists =
+            |path: &[String]| next.folders.contains(path) || paths.contains(&path.join("/"));
         let selected = self.selected();
         let keep = (0..=selected.len())
             .rev()
