@@ -47,6 +47,8 @@ pub enum Msg {
         path: String,
         spans: Option<Vec<Vec<highlight::Span>>>,
     },
+    /// A copy didn't reach the clipboard, and why.
+    CopyFailed(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -728,6 +730,10 @@ impl App {
                     text.spans = spans;
                 }
             }
+            Msg::CopyFailed(why) => {
+                let text = format!("couldn't copy: {why}");
+                self.status = Some(Status::new(StatusKind::Error, text));
+            }
         }
     }
 
@@ -1158,6 +1164,20 @@ mod tests {
         assert_eq!((app.context(), cursor(&app)), (Context::Viewer, (0, 12)));
         press_drawn(&mut app, "j");
         assert_eq!(app.status, None, "the message goes with the next key");
+    }
+
+    #[test]
+    fn a_copy_that_fails_says_so_instead() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "y y");
+        app.apply(Msg::CopyFailed("pbcopy: exited with 1".into()));
+        assert_eq!(
+            app.status,
+            Some(Status::new(
+                StatusKind::Error,
+                "couldn't copy: pbcopy: exited with 1"
+            ))
+        );
     }
 
     #[test]

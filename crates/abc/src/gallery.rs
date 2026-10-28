@@ -1,7 +1,7 @@
 //! `abc gallery <screen>`: a screen on fake data, in the real terminal, with no
 //! server. Each screen has named states; `[` and `]` step through them.
 
-use std::io::{Write, stdout};
+use std::io::stdout;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -300,10 +300,10 @@ fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
         for cmd in std::mem::take(&mut app.outbox) {
             match cmd {
                 Cmd::Copy(text) => {
-                    // The terminal takes it from here; one that can't simply ignores it.
-                    let mut out = stdout();
-                    let _ = out.write_all(clipboard::osc52(&text).as_bytes());
-                    let _ = out.flush();
+                    // On this thread: OSC 52 goes to the terminal between frames.
+                    if let Err(why) = clipboard::copy(&text, &mut stdout()) {
+                        app.apply(Msg::CopyFailed(why));
+                    }
                 }
                 Cmd::ReadFile { worktree, path } => {
                     let contents = fake::read(&path);
