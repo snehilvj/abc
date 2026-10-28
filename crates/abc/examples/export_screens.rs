@@ -81,6 +81,7 @@ fn main() {
         ("explorer", Screen::Explorer),
         ("viewer", Screen::Viewer),
         ("switcher", Screen::Switcher),
+        ("find", Screen::Find),
     ] {
         for preset in gallery::presets(screen) {
             dump(name, preset.name, &render(&preset.app, (120, 40), &theme));
