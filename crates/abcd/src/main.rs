@@ -1,12 +1,10 @@
 //! abcd: the abc server. Owns all state and serves clients over a Unix socket.
 //! abc starts it when it isn't running; it runs until asked to stop.
 
-mod log;
-mod server;
-
 use abc_core::build::BUILD_ID;
 use abc_core::paths::{Paths, Profile};
 use abc_core::protocol::PROTOCOL;
+use abcd::server;
 use anyhow::Context as _;
 use clap::Parser;
 
