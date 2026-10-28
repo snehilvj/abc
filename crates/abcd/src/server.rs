@@ -3,26 +3,32 @@
 
 use std::fs::{self, DirBuilder, File, TryLockError};
 use std::os::unix::fs::DirBuilderExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use abc_core::paths::Paths;
 use abc_core::protocol::{
-    Call, Done, ErrorCode, Hello, HelloLine, Request, Response, ServerStatus, encode,
+    Call, Done, ErrorCode, Failure, Hello, HelloLine, Repos, Request, Response, ServerStatus,
+    encode,
 };
 use anyhow::{Context as _, bail};
+use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::signal::unix::{SignalKind, signal};
-use tokio::sync::{Notify, mpsc};
+use tokio::sync::{Notify, broadcast, mpsc};
 use tracing::{info, warn};
+
+use crate::state::State;
 
 /// How often abcd checks its socket is still there.
 const SOCKET_CHECK: Duration = Duration::from_secs(1);
 /// How long abcd waits for another abcd of its profile to let go of the lock.
 const LOCK_WAIT: Duration = Duration::from_millis(500);
+/// How often abcd rescans repositories while anyone is subscribed (`git.status_interval`).
+const RESCAN: Duration = Duration::from_secs(5);
 
 /// What every connection shares.
 struct Server {
@@ -34,6 +40,7 @@ struct Server {
     clients: AtomicUsize,
     /// Notified when a client asks abcd to stop.
     stop: Notify,
+    state: State,
 }
 
 /// Serves the profile until asked to stop, signalled, or its socket goes.
@@ -72,6 +79,8 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
     let listener = UnixListener::bind(&socket)
         .with_context(|| format!("listening on {}", socket.display()))?;
     info!(pid = std::process::id(), build, "abcd started");
+    let home = std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from);
+    let state = State::load(paths.state_file(), home).await?;
 
     let server = Arc::new(Server {
         build,
@@ -82,12 +91,14 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             .map_or(0, |d| d.as_secs()),
         clients: AtomicUsize::new(0),
         stop: Notify::new(),
+        state,
     });
     let mut term = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
     // Handled, so closing the terminal that started abcd doesn't stop it.
     let mut hangup = signal(SignalKind::hangup())?;
     let mut check = tokio::time::interval(SOCKET_CHECK);
+    let mut rescan = tokio::time::interval(RESCAN);
     let why = loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
@@ -102,6 +113,10 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             _ = hangup.recv() => info!("ignoring SIGHUP"),
             _ = check.tick() => if !socket.exists() {
                 break "its socket was removed";
+            },
+            // Worktrees made or removed outside abc, and repositories that went.
+            _ = rescan.tick() => if server.state.subscribers.load(Ordering::SeqCst) > 0 {
+                server.state.rescan().await;
             },
         }
     };
@@ -162,6 +177,7 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
         }
     }
     let _client = Client::new(&server.clients);
+    let mut subscription: Option<Subscription> = None;
 
     // Responses, and later events, go out through one writer.
     let (out, mut outgoing) = mpsc::unbounded_channel::<String>();
@@ -191,21 +207,72 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
             }
         };
         let stop = request.call == Call::ServerShutdown;
-        let _ = out.send(encode(&answer(&server, request)));
+        if request.call == Call::Subscribe && subscription.is_none() {
+            subscription = Some(Subscription::start(&server.state, out.clone()));
+        }
+        let _ = out.send(encode(&answer(&server, request).await));
         if stop {
             // Let the answer go out before stopping.
-            drop(out);
+            drop((subscription, out));
             let _ = writer.await;
             server.stop.notify_one();
             return;
         }
     }
-    drop(out);
+    // The subscription holds a sender too: end it so the writer can finish.
+    drop((subscription, out));
     let _ = writer.await;
 }
 
-fn answer(server: &Server, request: Request) -> Response {
+/// Forwards change events to one connection while it's open.
+struct Subscription<'a> {
+    subscribers: &'a AtomicUsize,
+    forward: tokio::task::JoinHandle<()>,
+}
+
+impl<'a> Subscription<'a> {
+    fn start(state: &'a State, out: mpsc::UnboundedSender<String>) -> Self {
+        state.subscribers.fetch_add(1, Ordering::SeqCst);
+        let mut events = state.events.subscribe();
+        let forward = tokio::spawn(async move {
+            loop {
+                match events.recv().await {
+                    Ok(event) => {
+                        if out.send(encode(&event)).is_err() {
+                            break;
+                        }
+                    }
+                    // Events are whole snapshots: the next one makes up for any missed.
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+        Self {
+            subscribers: &state.subscribers,
+            forward,
+        }
+    }
+}
+
+impl Drop for Subscription<'_> {
+    fn drop(&mut self) {
+        self.forward.abort();
+        self.subscribers.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// A result, or the failure, as the response to request `id`.
+fn reply<T: Serialize>(id: u64, result: Result<T, Failure>) -> Response {
+    match result {
+        Ok(result) => Response::ok(id, &result),
+        Err(failure) => Response::error(id, failure.code, failure.message),
+    }
+}
+
+async fn answer(server: &Server, request: Request) -> Response {
     let id = request.id;
+    let state = &server.state;
     match request.call {
         Call::ServerStatus => Response::ok(
             id,
@@ -217,11 +284,28 @@ fn answer(server: &Server, request: Request) -> Response {
                 clients: server.clients.load(Ordering::SeqCst),
             },
         ),
-        Call::ServerShutdown => Response::ok(id, &Done {}),
+        Call::ServerShutdown | Call::Subscribe => Response::ok(id, &Done {}),
+        Call::RepoList => Response::ok(
+            id,
+            &Repos {
+                repos: state.rescan().await,
+            },
+        ),
+        Call::RepoCheck { path, name } => reply(id, state.check(&path, &name).await),
+        Call::RepoAdd { path, name } => reply(id, state.add(&path, name).await),
+        Call::RepoRemove { name } => reply(id, state.remove(&name).await),
+        Call::WorktreeVisit { worktree } => reply(id, state.visit(&worktree, now()).await),
         other => Response::error(
             id,
             ErrorCode::BadRequest,
             format!("this abcd can't answer {other:?} yet"),
         ),
     }
+}
+
+/// Seconds since the Unix epoch.
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }

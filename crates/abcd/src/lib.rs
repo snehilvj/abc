@@ -5,3 +5,4 @@ pub mod git;
 pub mod log;
 pub mod registry;
 pub mod server;
+pub mod state;
