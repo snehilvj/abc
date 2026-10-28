@@ -5,13 +5,16 @@ use std::path::{Path, PathBuf};
 
 use abc_core::model::{Repo, Worktree};
 use crokey::KeyCombination;
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use tui_input::Input;
+use tui_input::backend::crossterm::to_input_request;
 
 use crate::explorer::{Listing, NodePath};
 use crate::highlight::{self, Lang};
 use crate::keys::{self, Action, Context, Feed, Keymap};
 use crate::layout::Widths;
 use crate::motion::{self, Find, Pos};
+use crate::search;
 use crate::viewer::{Document, Place, Viewer};
 
 /// Work the app asks for: abcd reads files; highlighting runs off the UI
@@ -82,6 +85,8 @@ pub enum Connection {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusKind {
+    /// No icon, in the text colour: "/gstin · 3 of 12".
+    Plain,
     Info,
     Ok,
     Warning,
@@ -102,6 +107,21 @@ impl Status {
             text: text.into(),
         }
     }
+}
+
+/// A line typed in the status line: `/` text to find, `:` a line to go to.
+#[derive(Debug, Clone)]
+pub struct Prompt {
+    pub kind: PromptKind,
+    pub input: Input,
+    /// Where the cursor and the view were when it opened, to go back to.
+    origin: (Pos, usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptKind {
+    Search,
+    Line,
 }
 
 /// A row in the sidebar.
@@ -145,6 +165,12 @@ pub struct App {
     pub finding: Option<Action>,
     /// The last character find, for `;` and `,`.
     pub last_find: Option<Find>,
+    /// A prompt being typed; it takes every key until enter or esc.
+    pub prompt: Option<Prompt>,
+    /// The last search, for `n` and `N`.
+    pub search: Option<search::Search>,
+    /// Whether the viewer shows the last search's matches; esc hides them.
+    pub highlight: bool,
     pub quit: bool,
 }
 
@@ -175,6 +201,9 @@ impl App {
             count: None,
             finding: None,
             last_find: None,
+            prompt: None,
+            search: None,
+            highlight: false,
             quit: false,
         }
     }
@@ -224,6 +253,9 @@ impl App {
         }
         // A message lasts until the next key, as in Vim.
         self.status = None;
+        if self.prompt.is_some() {
+            return self.prompt_key(event);
+        }
         if let Some(action) = self.finding.take() {
             let count = self.count.take();
             if let Some(target) = typed_char(event) {
@@ -359,12 +391,6 @@ impl App {
         let n = count.unwrap_or(1);
         let at = viewer.cursor;
         let page = viewer.page();
-        // Lines by number: `12G`, `H`, `50%`. The cursor lands on the first non-blank.
-        let to_line = |viewer: &mut Viewer, line: usize| {
-            viewer.jump_by(1, |l, _| {
-                motion::first_non_blank(l, line.min(l.len().saturating_sub(1)))
-            })
-        };
         match action {
             Left => viewer.go(Pos::new(at.line, at.col.saturating_sub(n))),
             Right => viewer.go(Pos::new(at.line, at.col.saturating_add(n))),
@@ -382,8 +408,8 @@ impl App {
                 viewer.go_lines(n as isize - 1);
                 viewer.go_line_end();
             }
-            First => to_line(viewer, count.map_or(0, |n| n - 1)),
-            Last => to_line(viewer, count.map_or(usize::MAX, |n| n - 1)),
+            First => viewer.jump_to_line(count.map_or(0, |n| n - 1)),
+            Last => viewer.jump_to_line(count.map_or(usize::MAX, |n| n - 1)),
             ScreenTop | ScreenMiddle | ScreenBottom => {
                 let (top, bottom) = viewer.screen();
                 let line = match action {
@@ -391,7 +417,7 @@ impl App {
                     ScreenBottom => bottom.saturating_sub(n - 1).max(top),
                     _ => top + (bottom - top) / 2,
                 };
-                to_line(viewer, line);
+                viewer.jump_to_line(line);
             }
             HalfPageDown => viewer.scroll_with_cursor(page / 2),
             HalfPageUp => viewer.scroll_with_cursor(-page / 2),
@@ -409,7 +435,7 @@ impl App {
                 // `50%` goes halfway through the file.
                 Some(percent) => {
                     let line = (percent.min(100) * viewer.lines().len()).div_ceil(100);
-                    to_line(viewer, line.saturating_sub(1));
+                    viewer.jump_to_line(line.saturating_sub(1));
                 }
                 None => viewer.jump_by(1, |l, p| motion::matching_bracket(l, p).unwrap_or(p)),
             },
@@ -448,9 +474,179 @@ impl App {
                     self.copy(text, size);
                 }
             }
+            Action::Search | GoToLine => {
+                let kind = if action == GoToLine {
+                    PromptKind::Line
+                } else {
+                    PromptKind::Search
+                };
+                self.prompt = Some(Prompt {
+                    kind,
+                    input: Input::default(),
+                    origin: (viewer.cursor, viewer.scroll),
+                });
+            }
+            NextMatch | PreviousMatch => {
+                let from = viewer.cursor;
+                self.find_match(from, n, action == PreviousMatch);
+            }
+            SearchWord | SearchWordBack => match motion::word_bounds(viewer.lines(), at) {
+                Some((start, end)) => {
+                    let word: String = viewer.lines()[at.line]
+                        .chars()
+                        .skip(start)
+                        .take(end - start)
+                        .collect();
+                    self.search = Some(search::Search::word(word, action == SearchWord));
+                    // From the word's start, so `#` doesn't find the word itself.
+                    self.find_match(Pos::new(at.line, start), n, false);
+                }
+                None => {
+                    self.status = Some(Status::new(StatusKind::Error, "no word under the cursor"));
+                }
+            },
+            FocusLeft if self.highlight => self.highlight = false,
             _ => return false,
         }
         true
+    }
+
+    /// The next match of the last search from `from`, `count` times over, the
+    /// way it last went, or the other way for `N`. Says which match it is.
+    fn find_match(&mut self, from: Pos, count: usize, reverse: bool) {
+        let Some(search) = self.search.clone() else {
+            self.status = Some(Status::new(StatusKind::Error, "nothing to find yet"));
+            return;
+        };
+        self.highlight = true;
+        let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) else {
+            return;
+        };
+        let forward = search.forward != reverse;
+        let (mut at, mut wrapped) = (from, false);
+        for _ in 0..count.max(1) {
+            let Some(found) = search.next(viewer.lines(), at, forward) else {
+                let text = format!("not found: {}", search.pattern);
+                self.status = Some(Status::new(StatusKind::Error, text));
+                return;
+            };
+            (at, wrapped) = (found.at, wrapped || found.wrapped);
+        }
+        viewer.jump(at);
+        let (index, total) = search.count(viewer.lines(), at);
+        let summary = format!("/{} · {index} of {total}", search.pattern);
+        self.status = Some(if wrapped {
+            let end = if forward { "top" } else { "bottom" };
+            Status::new(
+                StatusKind::Warning,
+                format!("{summary} · continued from the {end}"),
+            )
+        } else {
+            Status::new(StatusKind::Plain, summary)
+        });
+    }
+
+    /// A key for the open prompt: enter runs it, esc (or backspace with
+    /// nothing typed) cancels it, and the rest edit it.
+    fn prompt_key(&mut self, event: KeyEvent) {
+        let empty = self
+            .prompt
+            .as_ref()
+            .is_some_and(|p| p.input.value().is_empty());
+        match event.code {
+            KeyCode::Enter => {
+                if let Some(prompt) = self.prompt.take() {
+                    self.run_prompt(prompt);
+                }
+            }
+            KeyCode::Esc => self.cancel_prompt(),
+            KeyCode::Backspace if empty => self.cancel_prompt(),
+            _ => {
+                let Some(prompt) = &mut self.prompt else {
+                    return;
+                };
+                if let Some(request) = to_input_request(&Event::Key(event)) {
+                    prompt.input.handle(request);
+                }
+                if prompt.kind == PromptKind::Search {
+                    self.search_as_typed();
+                }
+            }
+        }
+    }
+
+    /// Moves the cursor to the first match of what's typed so far, from
+    /// where it was when `/` opened, as Vim's `incsearch` does.
+    fn search_as_typed(&mut self) {
+        let Some(prompt) = &self.prompt else {
+            return;
+        };
+        let search = search::Search::new(prompt.input.value(), true);
+        let (cursor, scroll) = prompt.origin;
+        if let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) {
+            viewer.restore(cursor, scroll);
+            if let Some(found) = search.next(viewer.lines(), cursor, true) {
+                viewer.go(found.at);
+            }
+        }
+    }
+
+    /// Closes the prompt with the cursor back where it was.
+    fn cancel_prompt(&mut self) {
+        if let Some(Prompt {
+            origin: (cursor, scroll),
+            ..
+        }) = self.prompt.take()
+            && let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p))
+        {
+            viewer.restore(cursor, scroll);
+        }
+    }
+
+    fn run_prompt(&mut self, prompt: Prompt) {
+        let (cursor, scroll) = prompt.origin;
+        if let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) {
+            viewer.restore(cursor, scroll);
+        }
+        let value = prompt.input.value();
+        match prompt.kind {
+            PromptKind::Search => {
+                // Nothing typed finds the last search again, onwards, as in Vim.
+                match &mut self.search {
+                    _ if !value.is_empty() => {
+                        self.search = Some(search::Search::new(value, true));
+                    }
+                    Some(last) => last.forward = true,
+                    None => return,
+                }
+                self.find_match(cursor, 1, false);
+            }
+            PromptKind::Line => self.go_to_line(value.trim()),
+        }
+    }
+
+    /// What `:` takes: a line number, `$` for the last line, or `noh` to
+    /// hide the search's matches.
+    fn go_to_line(&mut self, value: &str) {
+        let line = match value {
+            "" => return,
+            "noh" | "nohlsearch" => {
+                self.highlight = false;
+                return;
+            }
+            "$" => usize::MAX,
+            other => match other.parse::<usize>() {
+                Ok(n) => n.saturating_sub(1),
+                Err(_) => {
+                    let text = format!("not a line number: {other}");
+                    self.status = Some(Status::new(StatusKind::Error, text));
+                    return;
+                }
+            },
+        };
+        if let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) {
+            viewer.jump_to_line(line);
+        }
     }
 
     /// Puts `text` on the clipboard and says how much went.
@@ -995,6 +1191,89 @@ mod tests {
         assert_eq!((app.context(), app.focus), (Context::Viewer, Focus::Viewer));
         app.handle_key(esc());
         assert_eq!(app.focus, Focus::Explorer);
+    }
+
+    fn key(app: &mut App, code: KeyCode) {
+        app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+
+    fn status(app: &App) -> &str {
+        app.status.as_ref().map_or("", |s| s.text.as_str())
+    }
+
+    #[test]
+    fn slash_finds_as_it_is_typed_and_n_goes_on() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "/ g s t");
+        assert_eq!(cursor(&app), (0, 23), "found while typing");
+        press_drawn(&mut app, "i n enter");
+        assert_eq!((cursor(&app), status(&app)), ((0, 23), "/gstin · 1 of 5"));
+        press_drawn(&mut app, "n n");
+        assert_eq!(cursor(&app), (9, 15));
+        press_drawn(&mut app, "N");
+        assert_eq!(cursor(&app), (3, 9));
+        press_drawn(&mut app, "3 n");
+        assert_eq!(cursor(&app), (10, 55));
+        press_drawn(&mut app, "n");
+        assert_eq!(cursor(&app), (0, 23));
+        assert_eq!(status(&app), "/gstin · 1 of 5 · continued from the top");
+        press_drawn(&mut app, "ctrl-o");
+        assert_eq!(cursor(&app), (10, 55), "each find is a jump");
+    }
+
+    #[test]
+    fn esc_cancels_a_search_then_hides_its_matches_then_leaves() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "j / g s t");
+        assert_eq!(
+            cursor(&app),
+            (2, 17),
+            "GstClient: lower case matches either"
+        );
+        key(&mut app, KeyCode::Esc);
+        assert_eq!((cursor(&app), app.prompt.is_none()), ((1, 0), true));
+        press_drawn(&mut app, "/ g s t enter");
+        assert!(app.highlight);
+        key(&mut app, KeyCode::Esc);
+        assert_eq!((app.highlight, app.focus), (false, Focus::Viewer));
+        key(&mut app, KeyCode::Esc);
+        assert_eq!(app.focus, Focus::Explorer);
+    }
+
+    #[test]
+    fn backspace_with_nothing_typed_closes_the_prompt() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "/ x");
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.prompt.is_some());
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.prompt.is_none());
+    }
+
+    #[test]
+    fn colon_goes_to_a_line() {
+        let mut app = viewing("generated/rows.rs");
+        press_drawn(&mut app, ": 4 2 enter");
+        assert_eq!(cursor(&app).0, 41);
+        press_drawn(&mut app, ": $ enter");
+        assert_eq!(cursor(&app).0, 9_999);
+        press_drawn(&mut app, ": x enter");
+        assert_eq!(status(&app), "not a line number: x");
+        press_drawn(&mut app, "ctrl-o");
+        assert_eq!(cursor(&app).0, 41);
+    }
+
+    #[test]
+    fn star_and_hash_find_the_word_under_the_cursor() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "4 G w w");
+        assert_eq!(cursor(&app), (3, 9));
+        press_drawn(&mut app, "*");
+        assert_eq!(cursor(&app), (9, 15));
+        press_drawn(&mut app, "#");
+        assert_eq!(cursor(&app), (3, 9));
+        press_drawn(&mut app, "n");
+        assert_eq!(cursor(&app), (0, 23), "after #, n goes on backwards");
     }
 
     #[test]

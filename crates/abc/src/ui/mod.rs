@@ -13,7 +13,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::app::{App, Connection, Entry, Focus, StatusKind};
+use crate::app::{App, Connection, Entry, Focus, Prompt, PromptKind, StatusKind};
 use crate::icons;
 use crate::keys::{self, Action, Context};
 use crate::layout::{self, Columns};
@@ -454,7 +454,17 @@ fn panes(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     let viewer = app.current_viewer();
     let viewer_area = Rect::new(g.d2 + 1, y0, g.cols.viewer, height);
     let focused = app.focus == Focus::Viewer;
-    viewer::draw(buf, viewer_area, viewer, focused, theme);
+    // While `/` is typed, the matches of what's typed so far; after, the
+    // last search's, until they're hidden.
+    let typing = app
+        .prompt
+        .as_ref()
+        .filter(|p| p.kind == PromptKind::Search)
+        .map(|p| crate::search::Search::new(p.input.value(), true));
+    let search = typing
+        .as_ref()
+        .or(app.search.as_ref().filter(|_| app.highlight));
+    viewer::draw(buf, viewer_area, viewer, focused, search, theme);
     if let Some(v) = viewer {
         let width = g.cols.viewer.saturating_sub(3);
         let header = viewer::header(v, width as usize, focused, theme);
@@ -517,6 +527,13 @@ fn keybar_items(app: &App) -> Vec<(String, &'static str)> {
         .filter(|k| k.0.len() > 1)
         .map(|k| keys::short(&keys::Keys(vec![k.0[0]])))
         .unwrap_or_default();
+    if let Some(prompt) = &app.prompt {
+        let run = match prompt.kind {
+            PromptKind::Search => "find",
+            PromptKind::Line => "go",
+        };
+        return vec![("enter".into(), run), ("esc".into(), "cancel")];
+    }
     match app.connection {
         Connection::Starting => return vec![(global(Help), "help"), (global(Quit), "quit")],
         Connection::StartFailed => return vec![(global(Retry), "retry"), (global(Quit), "quit")],
@@ -559,8 +576,9 @@ fn keybar_items(app: &App) -> Vec<(String, &'static str)> {
                 ),
                 "words",
             ),
-            (two(HalfPageDown, HalfPageUp), "half page"),
+            (two(Search, NextMatch), "find"),
             (two(VisualChars, VisualLines), "select"),
+            (one(GoToLine), "line"),
             (one(FocusLeft), "explorer"),
         ],
         Context::Visual => vec![
@@ -636,6 +654,7 @@ fn status_message(app: &App, theme: &Theme) -> Option<(Option<&'static str>, Str
         Connection::Connected => match &app.status {
             Some(s) => {
                 let (icon, color) = match s.kind {
+                    StatusKind::Plain => return Some((None, s.text.clone(), theme.text)),
                     StatusKind::Info => (icons::INFO, theme.accent),
                     StatusKind::Ok => (icons::SUCCESS, theme.ok),
                     StatusKind::Warning => (icons::WARNING, theme.warning),
@@ -705,6 +724,10 @@ fn status_line(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
         right_edge = g.right - counts.chars().count() as u16;
         buf.set_string(right_edge, g.bottom, counts, theme.dim());
     }
+    let room = right_edge.saturating_sub(g.left + 1);
+    if let Some(prompt) = &app.prompt {
+        return prompt_line(buf, (g.left + 1, g.bottom), room as usize, prompt, theme);
+    }
     if let Some((icon, text, color)) = status_message(app, theme) {
         let style = theme.style(color);
         let mut spans = vec![Span::raw(" ")];
@@ -713,8 +736,36 @@ fn status_line(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
             None => spans.push(Span::styled(text, style)),
         }
         spans.push(Span::raw(" "));
-        let room = right_edge.saturating_sub(g.left + 1);
         buf.set_line(g.left + 1, g.bottom, &Line::from(spans), room);
+    }
+}
+
+/// The open prompt, as Vim's command line shows it: its sign, what's typed,
+/// and a cursor in it, scrolled to keep the cursor in `room`.
+fn prompt_line(buf: &mut Buffer, (x, y): (u16, u16), room: usize, prompt: &Prompt, theme: &Theme) {
+    let sign = match prompt.kind {
+        PromptKind::Search => '/',
+        PromptKind::Line => ':',
+    };
+    // " /", then the text, then the cursor's cell and a blank before the border.
+    let scroll = prompt.input.visual_scroll(room.saturating_sub(4));
+    let mut skipped = 0;
+    let shown: String = prompt
+        .input
+        .value()
+        .chars()
+        .skip_while(|c| {
+            let skip = skipped < scroll;
+            if skip {
+                skipped += crate::viewer::width(&[*c]);
+            }
+            skip
+        })
+        .collect();
+    buf.set_stringn(x, y, format!(" {sign}{shown}  "), room, theme.text());
+    let cursor = 2 + prompt.input.visual_cursor() - scroll;
+    if cursor < room {
+        buf[(x + cursor as u16, y)].set_style(Style::new().add_modifier(Modifier::REVERSED));
     }
 }
 

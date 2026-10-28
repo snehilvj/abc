@@ -284,6 +284,19 @@ pub fn paragraph_backward(lines: &[String], p: Pos) -> Pos {
 
 /// The word under the cursor, for `*` and `#`.
 pub fn word_at(lines: &[String], p: Pos) -> Option<String> {
+    let (start, end) = word_bounds(lines, p)?;
+    Some(
+        lines[p.line]
+            .chars()
+            .skip(start)
+            .take(end - start)
+            .collect(),
+    )
+}
+
+/// The columns of the word under the cursor, or the next one on the line:
+/// its first, and one past its last.
+pub fn word_bounds(lines: &[String], p: Pos) -> Option<(usize, usize)> {
     let chars: Vec<char> = lines.get(p.line)?.chars().collect();
     let is_word = |c: char| c.is_alphanumeric() || c == '_';
     let col = (p.col..chars.len()).find(|&i| is_word(chars[i]))?;
@@ -292,7 +305,7 @@ pub fn word_at(lines: &[String], p: Pos) -> Option<String> {
         .take_while(|&i| is_word(chars[i]))
         .last()?
         + 1;
-    Some(chars[start..end].iter().collect())
+    Some((start, end))
 }
 
 #[cfg(test)]
@@ -408,6 +421,13 @@ mod tests {
         assert_eq!(clamp(&t, at(0, 99)), at(0, 11));
         assert_eq!(clamp(&t, at(1, 5)), at(1, 0));
         assert_eq!(clamp(&t, at(9, 0)), at(2, 0));
+    }
+
+    #[test]
+    fn a_words_bounds_reach_back_from_the_cursor() {
+        let t = text("let record = 1;");
+        assert_eq!(word_bounds(&t, at(0, 6)), Some((4, 10)));
+        assert_eq!(word_bounds(&t, at(0, 3)), Some((4, 10)));
     }
 
     #[test]

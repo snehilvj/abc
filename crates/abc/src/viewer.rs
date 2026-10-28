@@ -317,6 +317,22 @@ impl Viewer {
         (0..count.max(1)).fold(self.cursor, |p, _| motion(self.lines(), p))
     }
 
+    /// Goes to a line by number (`12G`, `H`, `50%`, `:12`), at its first
+    /// non-blank, as a jump. Past the end is the last line.
+    pub fn jump_to_line(&mut self, line: usize) {
+        self.jump_by(1, |l, _| {
+            motion::first_non_blank(l, line.min(l.len().saturating_sub(1)))
+        });
+    }
+
+    /// Puts the cursor and the view back as they were, as cancelling `/` does.
+    pub fn restore(&mut self, cursor: Pos, scroll: usize) {
+        self.cursor = cursor;
+        self.want = cursor.col;
+        self.scroll = scroll;
+        self.follow();
+    }
+
     /// Goes to `to` as a jump (`gg`, `G`, `%`…): `ctrl-o` comes back here.
     pub fn jump(&mut self, to: Pos) {
         let from = self.cursor;

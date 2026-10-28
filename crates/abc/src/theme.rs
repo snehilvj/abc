@@ -25,6 +25,10 @@ pub struct Theme {
     pub selection: Color,
     /// The background of the viewer's line with the cursor.
     pub cursor_line: Color,
+    /// The background of text a search found.
+    pub search_match: Color,
+    /// The background of the match the cursor is on.
+    pub current_match: Color,
     /// Text behind a dialog, or on screen while disconnected.
     pub faded: Color,
     pub ok: Color,
@@ -74,6 +78,8 @@ impl Theme {
             accent: rgb(0x4fc1d1),
             selection: rgb(0x1f3a44),
             cursor_line: rgb(0x20272e),
+            search_match: rgb(0x433c1f),
+            current_match: rgb(0x7a5a14),
             faded: rgb(0x343d45),
             ok: rgb(0x8cc56a),
             warning: rgb(0xe2b85a),
@@ -109,6 +115,8 @@ impl Theme {
             accent: rgb(0x0a7f8f),
             selection: rgb(0xdcecef),
             cursor_line: rgb(0xeef2f4),
+            search_match: rgb(0xfaeab0),
+            current_match: rgb(0xf3c35c),
             faded: rgb(0xcdd3d7),
             ok: rgb(0x2a7531),
             warning: rgb(0x9a6400),
@@ -144,6 +152,8 @@ impl Theme {
             accent: Color::Cyan,
             selection: Color::DarkGray,
             cursor_line: Color::Reset,
+            search_match: Color::DarkGray,
+            current_match: Color::Yellow,
             faded: Color::DarkGray,
             ok: Color::Green,
             warning: Color::Yellow,

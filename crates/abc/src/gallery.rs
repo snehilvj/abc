@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::SetTitle;
 use ratatui::layout::Rect;
@@ -243,6 +243,7 @@ pub fn viewer() -> Vec<Preset> {
     if let Some(viewer) = large.viewers.get_mut(&fake::current()) {
         viewer.go(Pos::new(usize::MAX, 0));
     }
+    let client = "packages/integrations/gst/client.ts";
     // verify.ts with a selection from one place to another.
     let select = |from: Pos, to: Pos, by_line: bool| {
         let mut app = open(verify, &[]);
@@ -254,7 +255,7 @@ pub fn viewer() -> Vec<Preset> {
         app
     };
     // The cursor near the end of a line longer than the viewer is wide.
-    let mut sideways = open("packages/integrations/gst/client.ts", &[]);
+    let mut sideways = open(client, &[]);
     if let Some(viewer) = sideways.viewers.get_mut(&fake::current()) {
         viewer.go(Pos::new(10, 52));
     }
@@ -274,7 +275,22 @@ pub fn viewer() -> Vec<Preset> {
         preset("sideways", sideways),
         preset("visual", select(Pos::new(3, 4), Pos::new(6, 9), false)),
         preset("visual-lines", select(Pos::new(3, 0), Pos::new(5, 0), true)),
+        preset("searching", typed(open(client, &[]), "/gst")),
+        preset("search", typed(open(client, &[]), "/gstin\nn")),
+        preset("go-to-line", typed(open(verify, &[]), ":42")),
     ]
+}
+
+/// `app` after typing `keys` in it, one key per character; `\n` is enter.
+fn typed(mut app: App, keys: &str) -> App {
+    for c in keys.chars() {
+        let code = match c {
+            '\n' => KeyCode::Enter,
+            c => KeyCode::Char(c),
+        };
+        app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+    }
+    app
 }
 
 /// Carries out the app's commands from fake data, as abcd will: files are read

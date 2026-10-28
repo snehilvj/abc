@@ -4,12 +4,14 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use super::label::{badge, labelled};
 use crate::highlight::{self, Kind, Lang};
 use crate::icons;
+use crate::motion::Pos;
+use crate::search::Search;
 use crate::theme::Theme;
 use crate::viewer::{Document, Viewer, width};
 
@@ -53,7 +55,14 @@ pub fn header<'a>(viewer: &Viewer, width: usize, focused: bool, theme: &Theme) -
 }
 
 /// The text, or a notice in its place, in `area`. Focused, it shows the cursor.
-pub fn draw(buf: &mut Buffer, area: Rect, viewer: Option<&Viewer>, focused: bool, theme: &Theme) {
+pub fn draw(
+    buf: &mut Buffer,
+    area: Rect,
+    viewer: Option<&Viewer>,
+    focused: bool,
+    search: Option<&Search>,
+    theme: &Theme,
+) {
     let notice = |buf: &mut Buffer, lines: Vec<Vec<Span>>| {
         for (i, spans) in lines.into_iter().enumerate() {
             buf.set_line(
@@ -158,6 +167,16 @@ pub fn draw(buf: &mut Buffer, area: Rect, viewer: Option<&Viewer>, focused: bool
                     buf.set_line(x, y, &line, room as u16);
                 }
                 let chars: Vec<char> = text.lines[index].chars().collect();
+                let at = (x, y);
+                let matches = search.map(|s| s.matches(&text.lines[index]));
+                for (start, end) in matches.unwrap_or_default() {
+                    let color = if Pos::new(index, start) == cursor {
+                        theme.current_match
+                    } else {
+                        theme.search_match
+                    };
+                    paint(buf, at, &chars, left, room, (start, end), color);
+                }
                 if let Some((from, to, by_line)) = viewer.selected().filter(|_| focused)
                     && (from.line..=to.line).contains(&index)
                 {
@@ -172,19 +191,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, viewer: Option<&Viewer>, focused: bool
                     } else {
                         to.col + 1
                     };
-                    let mut cx = 0;
-                    for col in left..end {
-                        let w = chars.get(col).map_or(1, |c| width(&[*c]));
-                        if col >= start {
-                            for dx in cx..(cx + w).min(room) {
-                                buf[(x + dx as u16, y)].set_bg(theme.selection);
-                            }
-                        }
-                        cx += w;
-                        if cx >= room {
-                            break;
-                        }
-                    }
+                    paint(buf, at, &chars, left, room, (start, end), theme.selection);
                 }
                 if current {
                     let col = cursor.col.min(chars.len());
@@ -195,6 +202,33 @@ pub fn draw(buf: &mut Buffer, area: Rect, viewer: Option<&Viewer>, focused: bool
                     }
                 }
             }
+        }
+    }
+}
+
+/// Colours the background of columns `start..end` of a line drawn from
+/// column `left` at `x`, no more than `room` cells. Past the line's end a
+/// column is one cell.
+fn paint(
+    buf: &mut Buffer,
+    (x, y): (u16, u16),
+    chars: &[char],
+    left: usize,
+    room: usize,
+    (start, end): (usize, usize),
+    color: Color,
+) {
+    let mut cell = 0;
+    for col in left..end {
+        let w = chars.get(col).map_or(1, |c| width(&[*c]));
+        if col >= start {
+            for dx in cell..(cell + w).min(room) {
+                buf[(x + dx as u16, y)].set_bg(color);
+            }
+        }
+        cell += w;
+        if cell >= room {
+            break;
         }
     }
 }

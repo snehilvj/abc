@@ -21,6 +21,7 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-typescript",
+ "tui-input",
  "tui-tree-widget",
 ]
 
@@ -1836,6 +1837,17 @@ checksum = "6c5f76ed8d947a75cc446d5fccd8b602ebf0cde64ccf2ffa434d873d7a575eff"
 dependencies = [
  "cc",
  "tree-sitter-language",
+]
+
+[[package]]
+name = "tui-input"
+version = "0.15.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4fa0cb7933d19f91eb3109781bf7297d5e4cba57e857d97a29b9465d3383f56"
+dependencies = [
+ "ratatui",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]

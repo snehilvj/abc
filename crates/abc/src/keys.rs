@@ -76,6 +76,16 @@ pub enum Action {
     Copy,
     /// Copies the cursor's line, or a count of lines from it.
     CopyLine,
+    /// `/`: types text to find.
+    Search,
+    /// `:`: types a line number to go to.
+    GoToLine,
+    NextMatch,
+    PreviousMatch,
+    /// `*`: finds the word under the cursor, onwards.
+    SearchWord,
+    /// `#`: finds the word under the cursor, backwards.
+    SearchWordBack,
 }
 
 impl FromStr for Action {
@@ -138,6 +148,12 @@ impl FromStr for Action {
             "exit_visual" => Self::ExitVisual,
             "copy" => Self::Copy,
             "copy_line" => Self::CopyLine,
+            "search" => Self::Search,
+            "go_to_line" => Self::GoToLine,
+            "next_match" => Self::NextMatch,
+            "previous_match" => Self::PreviousMatch,
+            "search_word" => Self::SearchWord,
+            "search_word_back" => Self::SearchWordBack,
             other => return Err(format!("unknown action {other:?}")),
         })
     }
@@ -375,6 +391,12 @@ impl Keymap {
             (Viewer, "v", VisualChars),
             (Viewer, "shift-v", VisualLines),
             (Viewer, "y y", CopyLine),
+            (Viewer, "/", Search),
+            (Viewer, "n", NextMatch),
+            (Viewer, "shift-n", PreviousMatch),
+            (Viewer, "*", SearchWord),
+            (Viewer, "#", SearchWordBack),
+            (Viewer, ":", GoToLine),
             (Viewer, "esc", FocusLeft),
             (Visual, "y", Copy),
             (Visual, "o", OtherEnd),
@@ -613,6 +635,19 @@ mod tests {
             feed_all(&map, Context::Explorer, &[ch('h')]),
             Feed::Action(Action::FocusLeft)
         );
+    }
+
+    #[test]
+    fn the_viewer_finds_with_vim_keys() {
+        let map = Keymap::defaults();
+        let viewer = |key: KeyCombination| feed_all(&map, Context::Viewer, &[key]);
+        let shifted = |c| press(KeyCode::Char(c), KeyModifiers::SHIFT);
+        assert_eq!(viewer(ch('/')), Feed::Action(Action::Search));
+        assert_eq!(viewer(shifted(':')), Feed::Action(Action::GoToLine));
+        assert_eq!(viewer(ch('n')), Feed::Action(Action::NextMatch));
+        assert_eq!(viewer(shifted('N')), Feed::Action(Action::PreviousMatch));
+        assert_eq!(viewer(shifted('*')), Feed::Action(Action::SearchWord));
+        assert_eq!(viewer(shifted('#')), Feed::Action(Action::SearchWordBack));
     }
 
     #[test]
