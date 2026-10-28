@@ -165,6 +165,17 @@ pub struct Viewer {
     pub(crate) hscroll: Cell<usize>,
 }
 
+/// An @-mention of `path` to paste into a Claude Code chat, with the lines
+/// (counting from 1) when there are some: "@src/main.rs:12-20".
+pub fn reference(path: &[String], lines: Option<(usize, usize)>) -> String {
+    let path = path.join("/");
+    match lines {
+        None => format!("@{path}"),
+        Some((first, last)) if first == last => format!("@{path}:{first}"),
+        Some((first, last)) => format!("@{path}:{first}-{last}"),
+    }
+}
+
 /// Visual mode: where it started, and whether it takes whole lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Selection {
@@ -628,6 +639,14 @@ mod tests {
             "one two\nthree\n",
             "no further than the end"
         );
+    }
+
+    #[test]
+    fn a_reference_mentions_the_file_and_its_lines() {
+        let path: Vec<String> = ["src", "main.rs"].map(String::from).to_vec();
+        assert_eq!(reference(&path, None), "@src/main.rs");
+        assert_eq!(reference(&path, Some((12, 12))), "@src/main.rs:12");
+        assert_eq!(reference(&path, Some((12, 20))), "@src/main.rs:12-20");
     }
 
     #[test]

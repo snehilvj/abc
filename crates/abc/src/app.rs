@@ -15,7 +15,7 @@ use crate::keys::{self, Action, Context, Feed, Keymap};
 use crate::layout::Widths;
 use crate::motion::{self, Find, Pos};
 use crate::search;
-use crate::viewer::{Document, Place, Viewer};
+use crate::viewer::{Document, Place, Viewer, reference};
 
 /// Work the app asks for: abcd reads files; highlighting runs off the UI
 /// thread; the terminal puts text on the clipboard.
@@ -341,6 +341,7 @@ impl App {
                 }
             }
             Action::Open if self.context() == Context::Sidebar => self.open_at_cursor(),
+            Action::CopyReference => self.copy_reference(),
             Action::Down | Action::Up | Action::First | Action::Last | Action::Open
                 if self.context() == Context::Explorer =>
             {
@@ -468,6 +469,15 @@ impl App {
                         plural(to.col - from.col + 1, "character")
                     };
                     self.copy(text, size);
+                }
+            }
+            // In visual mode, the selected lines whole, as Vim's Y does.
+            CopyLine if viewer.selection.is_some() => {
+                if let Some(s) = &mut viewer.selection {
+                    s.by_line = true;
+                }
+                if let Some((text, from, to, _)) = viewer.take_selection() {
+                    self.copy(text, plural(to.line - from.line + 1, "line"));
                 }
             }
             CopyLine => {
@@ -651,10 +661,43 @@ impl App {
         }
     }
 
-    /// Puts `text` on the clipboard and says how much went.
-    fn copy(&mut self, text: String, size: String) {
+    /// Puts `text` on the clipboard and says what went.
+    fn copy(&mut self, text: String, what: String) {
         self.outbox.push(Cmd::Copy(text));
-        self.status = Some(Status::new(StatusKind::Ok, format!("copied {size}")));
+        self.status = Some(Status::new(StatusKind::Ok, format!("copied {what}")));
+    }
+
+    /// `g y`: copies an @-mention for a Claude Code chat: of the explorer's
+    /// selection, or of the viewer's file with the selected lines. A
+    /// selection ends with the cursor at its start, as `y` leaves it.
+    fn copy_reference(&mut self) {
+        let reference = match self.context() {
+            Context::Explorer => match self.current_listing() {
+                Some(Listing::Ready(explorer)) => {
+                    let path = explorer.selected();
+                    if path.is_empty() {
+                        return;
+                    }
+                    reference(&path, None)
+                }
+                _ => return,
+            },
+            Context::Viewer | Context::Visual => {
+                let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p))
+                else {
+                    return;
+                };
+                let selected = viewer.selected();
+                if let Some((from, ..)) = selected {
+                    viewer.selection = None;
+                    viewer.go(from);
+                }
+                let lines = selected.map(|(from, to, _)| (from.line + 1, to.line + 1));
+                reference(&viewer.path, lines)
+            }
+            Context::Global | Context::Sidebar => return,
+        };
+        self.copy(reference.clone(), reference);
     }
 
     /// Finishes an `f`, `F`, `t` or `T` with the character typed after it.
@@ -1178,6 +1221,51 @@ mod tests {
                 "couldn't copy: pbcopy: exited with 1"
             ))
         );
+    }
+
+    fn copied(app: &mut App) -> String {
+        match app.outbox.pop() {
+            Some(Cmd::Copy(text)) => text,
+            other => panic!("nothing copied: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn g_y_copies_a_reference_to_the_file_or_its_selected_lines() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "j g y");
+        assert_eq!(copied(&mut app), "@packages/integrations/gst/client.ts");
+        assert_eq!(status(&app), "copied @packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "V j j g y");
+        assert_eq!(copied(&mut app), "@packages/integrations/gst/client.ts:2-4");
+        assert_eq!((app.context(), cursor(&app)), (Context::Viewer, (1, 0)));
+        press_drawn(&mut app, "v l g y");
+        assert_eq!(copied(&mut app), "@packages/integrations/gst/client.ts:2");
+    }
+
+    #[test]
+    fn g_y_in_the_explorer_copies_the_selected_path() {
+        let mut app = with_files();
+        press_drawn(&mut app, "g y");
+        assert_eq!(copied(&mut app), "@packages/integrations/gst/verify.ts");
+        press_drawn(&mut app, "k k k g y");
+        assert_eq!(copied(&mut app), "@packages/integrations");
+    }
+
+    #[test]
+    fn shift_y_copies_lines_or_the_selected_lines_whole() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "Y");
+        assert_eq!(
+            copied(&mut app),
+            "export type Record = { gstin: string; legalName: string; state: string }\n"
+        );
+        press_drawn(&mut app, "j j w v j Y");
+        assert_eq!(
+            copied(&mut app),
+            "export interface GstClient {\n  lookup(gstin: string): Promise<Record | undefined>\n"
+        );
+        assert_eq!(status(&app), "copied 2 lines");
     }
 
     #[test]

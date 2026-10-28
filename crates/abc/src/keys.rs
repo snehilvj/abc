@@ -74,8 +74,11 @@ pub enum Action {
     ExitVisual,
     /// Copies the selection to the clipboard.
     Copy,
-    /// Copies the cursor's line, or a count of lines from it.
+    /// Copies the cursor's line, or a count of lines from it; in visual
+    /// mode, the selected lines whole.
     CopyLine,
+    /// Copies an @-mention of the file at hand, with the selected lines.
+    CopyReference,
     /// `/`: types text to find.
     Search,
     /// `:`: types a line number to go to.
@@ -148,6 +151,7 @@ impl FromStr for Action {
             "exit_visual" => Self::ExitVisual,
             "copy" => Self::Copy,
             "copy_line" => Self::CopyLine,
+            "copy_reference" => Self::CopyReference,
             "search" => Self::Search,
             "go_to_line" => Self::GoToLine,
             "next_match" => Self::NextMatch,
@@ -343,6 +347,7 @@ impl Keymap {
             (Explorer, "shift-g", Last),
             (Explorer, "enter", Open),
             (Explorer, "o", Open),
+            (Explorer, "g y", CopyReference),
             (Viewer, "h", Left),
             (Viewer, "left", Left),
             (Viewer, "j", Down),
@@ -391,6 +396,8 @@ impl Keymap {
             (Viewer, "v", VisualChars),
             (Viewer, "shift-v", VisualLines),
             (Viewer, "y y", CopyLine),
+            (Viewer, "shift-y", CopyLine),
+            (Viewer, "g y", CopyReference),
             (Viewer, "/", Search),
             (Viewer, "n", NextMatch),
             (Viewer, "shift-n", PreviousMatch),
@@ -648,6 +655,24 @@ mod tests {
         assert_eq!(viewer(shifted('N')), Feed::Action(Action::PreviousMatch));
         assert_eq!(viewer(shifted('*')), Feed::Action(Action::SearchWord));
         assert_eq!(viewer(shifted('#')), Feed::Action(Action::SearchWordBack));
+    }
+
+    #[test]
+    fn shift_y_copies_lines_and_g_y_a_reference() {
+        let map = Keymap::defaults();
+        let feed = |context, keys: &[KeyCombination]| feed_all(&map, context, keys);
+        let upper_y = press(KeyCode::Char('Y'), KeyModifiers::SHIFT);
+        for context in [Context::Viewer, Context::Visual] {
+            assert_eq!(feed(context, &[upper_y]), Feed::Action(Action::CopyLine));
+            assert_eq!(
+                feed(context, &[ch('g'), ch('y')]),
+                Feed::Action(Action::CopyReference)
+            );
+        }
+        assert_eq!(
+            feed(Context::Explorer, &[ch('g'), ch('y')]),
+            Feed::Action(Action::CopyReference)
+        );
     }
 
     #[test]
