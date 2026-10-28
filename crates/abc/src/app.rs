@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use abc_core::client::Startup;
 use abc_core::model::{FoundFile, Head, Repo, RepoCheck, Worktree};
 use crokey::KeyCombination;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -39,6 +40,10 @@ pub enum Cmd {
     /// Forgets the repository named `name`; its files stay on disk.
     RemoveRepo {
         name: String,
+    },
+    /// The worktree's files, for its explorer.
+    ListFiles {
+        worktree: PathBuf,
     },
     /// Finds `query` in the worktree's files; answers come as `Found`, then `SearchDone`.
     Search {
@@ -109,6 +114,29 @@ pub enum Msg {
     RemoveFailed {
         why: String,
     },
+    /// abcd answered, at startup or after the connection dropped: every
+    /// repository, and how starting went.
+    Connected {
+        repos: Vec<Repo>,
+        startup: Startup,
+    },
+    /// The connection to abcd dropped; abc keeps trying.
+    ConnectionLost,
+    /// abcd didn't start, and why.
+    StartFailed(String),
+    /// abcd speaks another protocol: abc must be reopened.
+    Incompatible {
+        ours: u32,
+        theirs: u32,
+    },
+    /// The repositories changed, as abcd now has them.
+    ReposChanged(Vec<Repo>),
+    FilesListed {
+        worktree: PathBuf,
+        files: Result<Vec<String>, String>,
+    },
+    /// Pull request status is off, and why.
+    GithubOff(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -263,6 +291,8 @@ pub struct App {
     pub remove_repo: Option<RemoveRepo>,
     /// Whether the keys for the focused pane are showing.
     pub help: bool,
+    /// Why pull request status is off, once said, so it's said once.
+    pub github_off: Option<String>,
     /// Seconds since the Unix epoch, for "2h ago". The loop that runs the app keeps it current.
     pub now: u64,
     pub quit: bool,
@@ -306,6 +336,7 @@ impl App {
             add_repo: None,
             remove_repo: None,
             help: false,
+            github_off: None,
             now: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
@@ -1307,9 +1338,69 @@ impl App {
                     remove.stage = Removal::Failed(why);
                 }
             }
+            Msg::Connected { repos, startup } => {
+                let first = matches!(
+                    self.connection,
+                    Connection::Starting | Connection::StartFailed
+                );
+                self.connection = Connection::Connected;
+                match startup {
+                    Startup::Ready { .. } => {}
+                    Startup::Restarted { .. } => {
+                        let text = format!("abcd restarted · build {}", abc_core::build::BUILD_ID);
+                        self.status = Some(Status::new(StatusKind::Info, text));
+                    }
+                    Startup::StaleClient => self.stale_client = true,
+                }
+                self.set_repos(repos);
+                if first
+                    && self.current.is_none()
+                    && let Some(path) = self.most_recent()
+                {
+                    self.open(&path);
+                }
+            }
+            Msg::ConnectionLost => self.connection = Connection::Lost,
+            Msg::StartFailed(_) => self.connection = Connection::StartFailed,
+            Msg::Incompatible { ours, theirs } => {
+                self.connection = Connection::Incompatible { ours, theirs };
+            }
+            Msg::ReposChanged(repos) => self.set_repos(repos),
+            Msg::FilesListed { worktree, files } => {
+                if let Some(listing) = self.listings.get_mut(&worktree) {
+                    *listing = match files {
+                        Ok(files) => {
+                            Listing::Ready(Box::new(crate::explorer::Explorer::new(&files)))
+                        }
+                        Err(why) => Listing::Failed(why),
+                    };
+                }
+            }
+            Msg::GithubOff(why) => {
+                if self.github_off.as_ref() != Some(&why) {
+                    self.status = Some(Status::new(StatusKind::Warning, why.clone()));
+                    self.github_off = Some(why);
+                }
+            }
             Msg::SearchDone { id, capped } => self.find.done(id, capped),
             Msg::SearchFailed { id, why } => self.find.failed(id, why),
         }
+    }
+
+    /// The repositories as abcd has them now: worktrees that went are let go.
+    fn set_repos(&mut self, repos: Vec<Repo>) {
+        self.repos = repos;
+        self.forget_removed();
+    }
+
+    /// The worktree opened most recently, still there.
+    fn most_recent(&self) -> Option<PathBuf> {
+        self.repos
+            .iter()
+            .flat_map(|r| r.worktrees())
+            .filter(|w| !w.missing && w.last_opened.is_some())
+            .max_by_key(|w| w.last_opened)
+            .map(|w| w.path.clone())
     }
 
     /// Lets go of worktrees no longer in any repository. If the open one went,
@@ -1401,10 +1492,17 @@ impl App {
         if let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) {
             viewer.selection = None;
         }
-        // abcd sends the file list; until it arrives the explorer says it's loading.
-        self.listings
-            .entry(path.to_path_buf())
-            .or_insert(Listing::Loading);
+        // abcd sends the file list; until it arrives the explorer says it's
+        // loading. One that failed is asked for again.
+        let listed = matches!(
+            self.listings.get(path),
+            Some(Listing::Loading | Listing::Ready(_))
+        );
+        if !listed {
+            self.listings.insert(path.to_path_buf(), Listing::Loading);
+            let worktree = path.to_path_buf();
+            self.outbox.push(Cmd::ListFiles { worktree });
+        }
         if self.current.as_deref() != Some(path) {
             self.last = self.current.replace(path.to_path_buf());
         }
@@ -1468,6 +1566,7 @@ mod tests {
     use crate::add_repo::{self, Check};
     use crate::fake;
     use crate::viewer::Document;
+    use abc_core::client::Startup;
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
     fn app() -> App {
@@ -2434,6 +2533,123 @@ mod tests {
         assert!(app.pending.is_empty() && !app.which_key);
         press(&mut app, "q");
         assert!(app.quit, "keys work as usual again");
+    }
+
+    fn starting() -> App {
+        App::new("dev")
+    }
+
+    #[test]
+    fn once_connected_the_most_recently_opened_worktree_opens() {
+        let mut app = starting();
+        app.apply(Msg::Connected {
+            repos: fake::repos(),
+            startup: Startup::Ready { started: true },
+        });
+        assert_eq!(app.connection, Connection::Connected);
+        assert_eq!(app.current, Some(fake::current()), "gst-check, opened last");
+        assert_eq!(
+            app.outbox,
+            [Cmd::ListFiles {
+                worktree: fake::current()
+            }]
+        );
+        assert!(matches!(app.current_listing(), Some(Listing::Loading)));
+        app.outbox.clear();
+        app.apply(Msg::FilesListed {
+            worktree: fake::current(),
+            files: Ok(vec!["src/main.rs".into()]),
+        });
+        assert!(matches!(app.current_listing(), Some(Listing::Ready(_))));
+    }
+
+    #[test]
+    fn a_worktree_is_listed_once_unless_listing_failed() {
+        let mut app = with_files();
+        app.listings.clear();
+        press(&mut app, "h j enter");
+        let rounding = PathBuf::from("~/code/wt/privue-platform/gst-rounding");
+        assert_eq!(
+            app.outbox,
+            [Cmd::ListFiles {
+                worktree: rounding.clone()
+            }]
+        );
+        app.outbox.clear();
+        app.apply(Msg::FilesListed {
+            worktree: rounding.clone(),
+            files: Err("gone".into()),
+        });
+        assert!(matches!(app.current_listing(), Some(Listing::Failed(why)) if why == "gone"));
+        press(&mut app, "tab tab");
+        assert_eq!(
+            app.outbox.len(),
+            2,
+            "each listed once, a failed listing asked for again"
+        );
+    }
+
+    #[test]
+    fn how_starting_went_is_said() {
+        let mut app = starting();
+        app.apply(Msg::Connected {
+            repos: fake::repos(),
+            startup: Startup::Restarted {
+                from: "0.0.9+0ddba11".into(),
+            },
+        });
+        assert!(status(&app).starts_with("abcd restarted · build "));
+        let mut stale = starting();
+        stale.apply(Msg::Connected {
+            repos: Vec::new(),
+            startup: Startup::StaleClient,
+        });
+        assert!(stale.stale_client && stale.current.is_none());
+
+        let mut failed = starting();
+        failed.apply(Msg::StartFailed("no answer".into()));
+        assert_eq!(failed.connection, Connection::StartFailed);
+        let mut old = starting();
+        old.apply(Msg::Incompatible { ours: 1, theirs: 2 });
+        assert_eq!(
+            old.connection,
+            Connection::Incompatible { ours: 1, theirs: 2 }
+        );
+    }
+
+    #[test]
+    fn a_lost_connection_keeps_what_was_there_until_it_returns() {
+        let mut app = with_files();
+        app.apply(Msg::ConnectionLost);
+        assert_eq!(app.connection, Connection::Lost);
+        assert_eq!(app.current, Some(fake::current()));
+        let mut repos = fake::repos();
+        repos.remove(1);
+        app.apply(Msg::Connected {
+            repos,
+            startup: Startup::Ready { started: false },
+        });
+        assert_eq!(app.connection, Connection::Connected);
+        assert_eq!(app.current, Some(fake::current()), "still where it was");
+        assert_eq!(app.repos.len(), 1);
+    }
+
+    #[test]
+    fn repositories_follow_abcd() {
+        let mut app = with_files();
+        let mut repos = fake::repos();
+        repos.remove(0);
+        app.apply(Msg::ReposChanged(repos));
+        assert_eq!(app.repos.len(), 1);
+        assert_eq!(
+            app.current, None,
+            "its worktree went, with no other to go back to"
+        );
+        app.apply(Msg::GithubOff("gh is not logged in".into()));
+        assert_eq!(status(&app), "gh is not logged in");
+        app.status = None;
+        app.apply(Msg::GithubOff("gh is not logged in".into()));
+        assert!(app.status.is_none(), "said once");
     }
 
     #[test]

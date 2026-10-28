@@ -281,6 +281,19 @@ pub const ECOURTS_FILES: &[&str] = &[
 ];
 
 /// Loaded file lists for every worktree, with `verify.ts` open in the current one.
+/// The files abcd would list for `worktree`, one of `repos`'.
+pub fn files(repos: &[Repo], worktree: &Path) -> Vec<String> {
+    let ecourts = repos
+        .iter()
+        .any(|r| r.name == "ecourts" && r.worktrees().iter().any(|w| w.path == worktree));
+    let files = if ecourts {
+        ECOURTS_FILES
+    } else {
+        PLATFORM_FILES
+    };
+    files.iter().map(|f| f.to_string()).collect()
+}
+
 pub fn listings(repos: &[Repo]) -> std::collections::HashMap<PathBuf, crate::explorer::Listing> {
     use crate::explorer::{Explorer, Listing};
     let mut listings = std::collections::HashMap::new();

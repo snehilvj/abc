@@ -562,6 +562,10 @@ fn settled(mut app: App) -> App {
                     let msg = answer_repo(&app, &cmd);
                     app.apply(msg);
                 }
+                Cmd::ListFiles { worktree } => {
+                    let files = Ok(fake::files(&app.repos, &worktree));
+                    app.apply(Msg::FilesListed { worktree, files });
+                }
                 Cmd::Copy(_) => {}
             }
         }
@@ -621,6 +625,10 @@ fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
                 cmd @ (Cmd::CheckRepo { .. } | Cmd::AddRepo { .. } | Cmd::RemoveRepo { .. }) => {
                     let msg = answer_repo(app, &cmd);
                     app.apply(msg);
+                }
+                Cmd::ListFiles { worktree } => {
+                    let files = Ok(fake::files(&app.repos, &worktree));
+                    app.apply(Msg::FilesListed { worktree, files });
                 }
                 Cmd::Copy(text) => {
                     // On this thread: OSC 52 goes to the terminal between frames.
