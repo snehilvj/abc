@@ -3,12 +3,13 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use abc_core::model::{FoundFile, Head, Repo, Worktree};
+use abc_core::model::{FoundFile, Head, Repo, RepoCheck, Worktree};
 use crokey::KeyCombination;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tui_input::Input;
 use tui_input::backend::crossterm::to_input_request;
 
+use crate::add_repo::{AddRepo, Field, Stage};
 use crate::explorer::{Listing, NodePath};
 use crate::find;
 use crate::highlight::{self, Lang};
@@ -24,6 +25,18 @@ use crate::viewer::{Document, Place, Viewer, reference};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cmd {
     Copy(String),
+    /// Folders that complete `path`, for adding a repository.
+    Complete {
+        path: String,
+    },
+    /// What abcd makes of `path` as a repository to add.
+    CheckRepo {
+        path: String,
+    },
+    AddRepo {
+        path: String,
+        name: String,
+    },
     /// Finds `query` in the worktree's files; answers come as `Found`, then `SearchDone`.
     Search {
         worktree: PathBuf,
@@ -70,6 +83,22 @@ pub enum Msg {
     },
     SearchFailed {
         id: u64,
+        why: String,
+    },
+    Completions {
+        path: String,
+        dirs: Vec<String>,
+    },
+    RepoChecked {
+        path: String,
+        check: Result<RepoCheck, String>,
+    },
+    /// A repository was added; `repos` is the list with it.
+    RepoAdded {
+        name: String,
+        repos: Vec<Repo>,
+    },
+    AddFailed {
         why: String,
     },
 }
@@ -202,6 +231,8 @@ pub struct App {
     pub find: find::Find,
     /// Whether find in files is open; it takes every key.
     pub find_open: bool,
+    /// The add repository dialog, while it's open; it takes every key.
+    pub add_repo: Option<AddRepo>,
     /// Seconds since the Unix epoch, for "2h ago". The loop that runs the app keeps it current.
     pub now: u64,
     pub quit: bool,
@@ -240,6 +271,7 @@ impl App {
             switcher: None,
             find: find::Find::default(),
             find_open: false,
+            add_repo: None,
             now: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
@@ -297,6 +329,9 @@ impl App {
         }
         if self.find_open {
             return self.find_key(event);
+        }
+        if self.add_repo.is_some() {
+            return self.add_repo_key(event);
         }
         if self.prompt.is_some() {
             return self.prompt_key(event);
@@ -388,6 +423,7 @@ impl App {
             Action::Switcher | Action::FindWorktree => self.open_switcher(Mode::Worktrees),
             Action::FindFile => self.open_switcher(Mode::Files),
             Action::FindInFiles => self.open_find(),
+            Action::AddRepo => self.add_repo = Some(AddRepo::default()),
             Action::Down | Action::Up | Action::First | Action::Last | Action::Open
                 if self.context() == Context::Explorer =>
             {
@@ -855,6 +891,12 @@ impl App {
         if self.find.due(now) {
             self.start_search();
         }
+        if let Some(add) = &mut self.add_repo
+            && add.due(now)
+        {
+            let path = add.start_check();
+            self.outbox.push(Cmd::CheckRepo { path });
+        }
     }
 
     /// A key for find in files: enter opens the selected line, esc closes,
@@ -879,6 +921,60 @@ impl App {
                         .is_some_and(|changed| changed.value)
                 {
                     self.find.edited(std::time::Instant::now());
+                }
+            }
+        }
+    }
+
+    /// Whether a repository already has `name`.
+    pub fn name_taken(&self, name: &str) -> bool {
+        self.repos.iter().any(|r| r.name == name)
+    }
+
+    /// A key for the add repository dialog: tab completes the path and then
+    /// cycles, the arrows move between path and name, enter adds, esc
+    /// cancels, and the rest edit the field.
+    fn add_repo_key(&mut self, event: KeyEvent) {
+        let taken: Vec<String> = self.repos.iter().map(|r| r.name.clone()).collect();
+        let Some(add) = self.add_repo.as_mut() else {
+            return;
+        };
+        match event.code {
+            KeyCode::Esc => self.add_repo = None,
+            KeyCode::Enter => {
+                if add.ready(|name| taken.iter().any(|t| t == name)) {
+                    add.stage = Stage::Adding;
+                    let (path, name) = (add.path.value().to_string(), add.name().to_string());
+                    self.outbox.push(Cmd::AddRepo { path, name });
+                }
+            }
+            KeyCode::Up | KeyCode::Down => {
+                add.completions = None;
+                add.field = match add.field {
+                    Field::Path => Field::Name,
+                    Field::Name => Field::Path,
+                };
+            }
+            KeyCode::Tab | KeyCode::BackTab if add.field == Field::Path => {
+                if add.completions.is_some() {
+                    add.cycle(event.code == KeyCode::Tab);
+                    let path = add.start_check();
+                    self.outbox.push(Cmd::CheckRepo { path });
+                } else {
+                    let path = add.path.value().to_string();
+                    self.outbox.push(Cmd::Complete { path });
+                }
+            }
+            _ => {
+                let input = match add.field {
+                    Field::Path => &mut add.path,
+                    Field::Name => &mut add.name,
+                };
+                let changed = to_input_request(&Event::Key(event))
+                    .and_then(|request| input.handle(request))
+                    .is_some_and(|changed| changed.value);
+                if changed && add.field == Field::Path {
+                    add.path_edited(std::time::Instant::now());
                 }
             }
         }
@@ -1044,6 +1140,31 @@ impl App {
                 self.status = Some(Status::new(StatusKind::Error, text));
             }
             Msg::Found { id, files } => self.find.found(id, files),
+            Msg::Completions { path, dirs } => {
+                // One folder completes the path, so check it; several leave it partial.
+                if let Some(add) = &mut self.add_repo
+                    && add.completed(&path, dirs)
+                    && add.completions.is_none()
+                {
+                    let path = add.start_check();
+                    self.outbox.push(Cmd::CheckRepo { path });
+                }
+            }
+            Msg::RepoChecked { path, check } => {
+                if let Some(add) = &mut self.add_repo {
+                    add.checked(&path, check);
+                }
+            }
+            Msg::RepoAdded { name, repos } => {
+                self.repos = repos;
+                self.add_repo = None;
+                self.status = Some(Status::new(StatusKind::Ok, format!("added {name}")));
+            }
+            Msg::AddFailed { why } => {
+                if let Some(add) = &mut self.add_repo {
+                    add.stage = Stage::Failed(why);
+                }
+            }
             Msg::SearchDone { id, capped } => self.find.done(id, capped),
             Msg::SearchFailed { id, why } => self.find.failed(id, why),
         }
@@ -1151,6 +1272,7 @@ fn typed_char(event: KeyEvent) -> Option<char> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::add_repo::{self, Check};
     use crate::fake;
     use crate::viewer::Document;
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
@@ -1852,6 +1974,98 @@ mod tests {
             (worktree.as_path(), query.as_str()),
             (Path::new("~/code/wt/privue-platform/gst-rounding"), "gstin")
         );
+    }
+
+    /// Types `text`, one key per character.
+    fn type_text(app: &mut App, text: &str) {
+        for c in text.chars() {
+            key(app, KeyCode::Char(c));
+        }
+    }
+
+    /// Answers what the add repository dialog asked abcd, from the fake disk.
+    fn answer_repo_cmds(app: &mut App) {
+        for cmd in std::mem::take(&mut app.outbox) {
+            let msg = match cmd {
+                Cmd::Complete { path } => Msg::Completions {
+                    dirs: fake::complete(&path),
+                    path,
+                },
+                Cmd::CheckRepo { path } => Msg::RepoChecked {
+                    check: Ok(fake::check_repo(&path, &app.repos)),
+                    path,
+                },
+                Cmd::AddRepo { path, name } => {
+                    let mut repos = app.repos.clone();
+                    repos.push(fake::added(&path, &name));
+                    Msg::RepoAdded { name, repos }
+                }
+                other => panic!("not asked of the dialog: {other:?}"),
+            };
+            app.apply(msg);
+        }
+    }
+
+    fn adding(app: &App) -> &AddRepo {
+        app.add_repo.as_ref().expect("the dialog is open")
+    }
+
+    #[test]
+    fn space_r_a_checks_the_path_once_typing_pauses() {
+        let mut app = with_files();
+        press(&mut app, "space r a");
+        type_text(&mut app, "code/privue-agents/");
+        assert!(app.outbox.is_empty(), "nothing asked while typing");
+        app.tick(std::time::Instant::now() + add_repo::DELAY);
+        answer_repo_cmds(&mut app);
+        assert_eq!(
+            adding(&app).check,
+            Check::Checked(Ok(RepoCheck::Ready { worktrees: 3 }))
+        );
+        assert_eq!(adding(&app).name(), "privue-agents");
+    }
+
+    #[test]
+    fn tab_completes_and_cycles_then_enter_adds_the_repository() {
+        let mut app = with_files();
+        press(&mut app, "space r a");
+        type_text(&mut app, "code/privue-a");
+        key(&mut app, KeyCode::Tab);
+        answer_repo_cmds(&mut app);
+        assert_eq!(adding(&app).path.value(), "~/code/privue-ag");
+        key(&mut app, KeyCode::Tab);
+        assert_eq!(adding(&app).path.value(), "~/code/privue-agents/");
+        answer_repo_cmds(&mut app);
+        key(&mut app, KeyCode::Enter);
+        answer_repo_cmds(&mut app);
+        assert!(app.add_repo.is_none());
+        assert_eq!(status(&app), "added privue-agents");
+        assert_eq!(
+            app.repos.last().map(|r| r.name.as_str()),
+            Some("privue-agents")
+        );
+    }
+
+    #[test]
+    fn enter_adds_nothing_but_a_repository_under_a_free_name() {
+        let mut app = with_files();
+        press(&mut app, "space r a");
+        type_text(&mut app, "Downloads/");
+        app.tick(std::time::Instant::now() + add_repo::DELAY);
+        answer_repo_cmds(&mut app);
+        key(&mut app, KeyCode::Enter);
+        assert!(app.outbox.is_empty(), "not a git repository");
+        key(&mut app, KeyCode::Esc);
+        press(&mut app, "space r a");
+        type_text(&mut app, "code/privue-agents/");
+        app.tick(std::time::Instant::now() + add_repo::DELAY);
+        answer_repo_cmds(&mut app);
+        key(&mut app, KeyCode::Down);
+        type_text(&mut app, "ecourts");
+        key(&mut app, KeyCode::Enter);
+        assert!(app.outbox.is_empty(), "the name is taken");
+        key(&mut app, KeyCode::Esc);
+        assert!(app.add_repo.is_none());
     }
 
     #[test]

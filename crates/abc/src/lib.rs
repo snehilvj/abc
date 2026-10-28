@@ -1,5 +1,6 @@
 //! The abc terminal client and CLI. Everything it does goes through abcd.
 
+pub mod add_repo;
 pub mod app;
 pub mod clipboard;
 pub mod explorer;

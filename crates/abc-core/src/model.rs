@@ -141,3 +141,20 @@ pub struct FoundLine {
     pub number: u32,
     pub text: String,
 }
+
+/// What abcd made of a folder offered as a repository to add.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RepoCheck {
+    /// A git repository abc can add, and how many worktrees it has.
+    Ready {
+        worktrees: usize,
+    },
+    NotFound,
+    NotGit,
+    /// Already added, under this name; found by its git folder, so through
+    /// any of its worktrees too.
+    AlreadyAdded {
+        name: String,
+    },
+}

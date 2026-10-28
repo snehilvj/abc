@@ -1,5 +1,6 @@
 //! Drawing. Everything here is a pure function of the app state and theme.
 
+pub mod add_repo;
 pub mod catalog;
 pub mod dialog;
 pub mod explorer;
@@ -62,6 +63,10 @@ pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     if app.find_open {
         fade(buf, area, theme);
         find::draw(buf, area, app, theme);
+    }
+    if let Some(add) = &app.add_repo {
+        fade(buf, area, theme);
+        add_repo::draw(buf, area, app, add, theme);
     }
 }
 

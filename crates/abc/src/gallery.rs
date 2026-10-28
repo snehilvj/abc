@@ -12,6 +12,7 @@ use ratatui::crossterm::terminal::SetTitle;
 use ratatui::layout::Rect;
 use ratatui::widgets::Paragraph;
 
+use crate::add_repo;
 use crate::app::{App, Cmd, Connection, Entry, Focus, Msg, SidebarStyle, Status, StatusKind};
 use crate::clipboard;
 use crate::explorer::{Explorer, Listing};
@@ -31,6 +32,7 @@ pub enum Screen {
     Switcher,
     /// Find in files.
     Find,
+    AddRepo,
     /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
     Icons,
     /// Panics on the first key, to check the terminal comes back clean.
@@ -75,6 +77,7 @@ pub fn presets(screen: Screen) -> Vec<Preset> {
         Screen::Viewer => viewer(),
         Screen::Switcher => switcher(),
         Screen::Find => find(),
+        Screen::AddRepo => add_repo(),
         Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
@@ -355,6 +358,68 @@ pub fn find() -> Vec<Preset> {
     ]
 }
 
+/// The add repository dialog's states, opened with `space r a` and typed into.
+pub fn add_repo() -> Vec<Preset> {
+    let opened = || typed(connected(fake::repos()), " ra");
+    let checked = |path: &str| settled(typed(opened(), path));
+    let key = |app: App, code: KeyCode| pressed(app, code, KeyModifiers::NONE);
+    // Asked of abcd, with the answer still to come.
+    let waiting = |mut app: App| {
+        app.tick(Instant::now() + add_repo::DELAY);
+        app.outbox.clear();
+        app
+    };
+    let adding = waiting(key(checked("code/privue-agents/"), KeyCode::Enter));
+    let mut failed = adding.clone();
+    failed.apply(Msg::AddFailed {
+        why: "not connected".into(),
+    });
+    let mut taken = key(checked("code/privue-agents/"), KeyCode::Down);
+    taken = typed(taken, "ecourts");
+    vec![
+        preset("valid", checked("code/privue-agents/")),
+        preset(
+            "completing",
+            settled(key(typed(opened(), "code/privue-a"), KeyCode::Tab)),
+        ),
+        preset("opened", opened()),
+        preset("checking", waiting(typed(opened(), "code/privue-agents/"))),
+        preset("not-git", checked("Downloads/")),
+        preset("not-found", checked("code/nope/")),
+        preset("duplicate", checked("code/ecourts/")),
+        preset("name-taken", taken),
+        preset("adding", adding),
+        preset("error", failed),
+        preset(
+            "added",
+            settled(key(checked("code/privue-agents/"), KeyCode::Enter)),
+        ),
+    ]
+}
+
+/// abcd's answer to a repository command, from the fake disk.
+fn answer_repo(app: &App, cmd: &Cmd) -> Msg {
+    match cmd {
+        Cmd::Complete { path } => Msg::Completions {
+            path: path.clone(),
+            dirs: fake::complete(path),
+        },
+        Cmd::CheckRepo { path } => Msg::RepoChecked {
+            path: path.clone(),
+            check: Ok(fake::check_repo(path, &app.repos)),
+        },
+        Cmd::AddRepo { path, name } => {
+            let mut repos = app.repos.clone();
+            repos.push(fake::added(path, name));
+            Msg::RepoAdded {
+                name: name.clone(),
+                repos,
+            }
+        }
+        other => unreachable!("not a repository command: {other:?}"),
+    }
+}
+
 /// The current worktree's files, as abcd lists them.
 fn listed_files(app: &App) -> Vec<String> {
     match app.current_listing() {
@@ -400,6 +465,10 @@ fn settled(mut app: App) -> App {
                     let (files, capped) = fake::search(&listed_files(&app), &query, max_lines);
                     app.apply(Msg::Found { id, files });
                     app.apply(Msg::SearchDone { id, capped });
+                }
+                cmd @ (Cmd::Complete { .. } | Cmd::CheckRepo { .. } | Cmd::AddRepo { .. }) => {
+                    let msg = answer_repo(&app, &cmd);
+                    app.apply(msg);
                 }
                 Cmd::Copy(_) => {}
             }
@@ -457,6 +526,10 @@ fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
                         let _ = tx.send(Msg::SearchDone { id, capped });
                     });
                 }
+                cmd @ (Cmd::Complete { .. } | Cmd::CheckRepo { .. } | Cmd::AddRepo { .. }) => {
+                    let msg = answer_repo(app, &cmd);
+                    app.apply(msg);
+                }
                 Cmd::Copy(text) => {
                     // On this thread: OSC 52 goes to the terminal between frames.
                     if let Err(why) = clipboard::copy(&text, &mut stdout()) {
@@ -496,7 +569,12 @@ pub fn run(args: Args) -> Result<()> {
     match args.screen {
         Screen::Panic => return run_panic(),
         Screen::Icons => return run_catalog(args.state.as_deref(), Theme::resolve(args.theme)),
-        Screen::Frame | Screen::Explorer | Screen::Viewer | Screen::Switcher | Screen::Find => {}
+        Screen::Frame
+        | Screen::Explorer
+        | Screen::Viewer
+        | Screen::Switcher
+        | Screen::Find
+        | Screen::AddRepo => {}
     }
     let presets = presets(args.screen);
     let names = || {

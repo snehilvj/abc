@@ -1,7 +1,7 @@
 //! The fake world the gallery and snapshot tests draw. It mirrors the approved
 //! screen designs, so a gallery screen can be compared with its design directly.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use abc_core::model::{
     Checks, GitStatus, Head, PrState, PullRequest, Repo, RepoState, Review, Worktree,
@@ -520,4 +520,66 @@ pub fn search(
         }
     }
     (found, false)
+}
+
+/// Folders on the fake disk, for adding a repository.
+pub const FOLDERS: &[&str] = &[
+    "~/code/",
+    "~/code/ecourts/",
+    "~/code/notes/",
+    "~/code/privue-agents/",
+    "~/code/privue-agreements/",
+    "~/code/privue-platform/",
+    "~/Desktop/",
+    "~/Documents/",
+    "~/Downloads/",
+];
+
+/// The folders that complete `path`, as abcd lists them: within its folder,
+/// starting with what follows the last `/`.
+pub fn complete(path: &str) -> Vec<String> {
+    let parent = &path[..path.rfind('/').map_or(0, |i| i + 1)];
+    FOLDERS
+        .iter()
+        .filter(|f| {
+            f.starts_with(path)
+                && f.len() > parent.len()
+                && !f[parent.len()..].trim_end_matches('/').contains('/')
+        })
+        .map(|f| f.to_string())
+        .collect()
+}
+
+/// What abcd would make of `path` as a repository to add, with `repos` added already.
+pub fn check_repo(path: &str, repos: &[Repo]) -> abc_core::model::RepoCheck {
+    use abc_core::model::RepoCheck;
+    let folder = path.trim_end_matches('/');
+    if let Some(repo) = repos.iter().find(|r| r.path == Path::new(folder)) {
+        return RepoCheck::AlreadyAdded {
+            name: repo.name.clone(),
+        };
+    }
+    match folder {
+        "~/code/privue-agents" => RepoCheck::Ready { worktrees: 3 },
+        "~/code/privue-agreements" => RepoCheck::Ready { worktrees: 1 },
+        _ if FOLDERS.contains(&format!("{folder}/").as_str()) => RepoCheck::NotGit,
+        _ => RepoCheck::NotFound,
+    }
+}
+
+/// The repository abcd would add at `path`: its main worktree, on main.
+pub fn added(path: &str, name: &str) -> Repo {
+    let folder = path.trim_end_matches('/');
+    Repo {
+        name: name.into(),
+        path: PathBuf::from(folder),
+        state: RepoState::Present {
+            worktrees: vec![Worktree {
+                path: PathBuf::from(folder),
+                name: folder.rsplit('/').next().unwrap_or(name).into(),
+                is_main: true,
+                ..worktree(name, name, "main")
+            }],
+        },
+    }
 }
