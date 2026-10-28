@@ -16,7 +16,7 @@ use serde::Deserialize;
 pub struct Settings {
     /// "auto" picks dark or light from your terminal's background. Built in:
     /// "auto", "dark", "light", "ansi". Your own: `themes/<name>.toml` beside
-    /// this file.
+    /// this file; `abc config theme dark` prints one to start from.
     #[config(default = "auto", env = "ABC_THEME")]
     pub theme: String,
 

@@ -19,6 +19,7 @@ dependencies = [
  "tempfile",
  "terminal-colorsaurus",
  "tokio",
+ "toml",
  "tracing",
  "tree-sitter",
  "tree-sitter-highlight",

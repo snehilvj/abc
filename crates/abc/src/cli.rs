@@ -50,6 +50,9 @@ pub enum Config {
     Check,
     /// Print every option with its docs and default, as a settings file to start from.
     Template,
+    /// Print a theme (dark, light, ansi, or one of yours) as a file to copy to
+    /// `themes/<name>.toml` and change.
+    Theme { name: String },
 }
 
 #[derive(Debug, clap::Args)]
@@ -114,7 +117,23 @@ pub fn config(command: Config, paths: &Paths) -> ExitCode {
             "{}",
             Settings::template(paths.profile.name(), Path::new(&shown))
         ),
-        Config::Check => match check_settings(&file) {
+        Config::Theme { name } => match crate::theme::Theme::named(&name, &paths.config_dir) {
+            Ok(theme) => print!("{}", theme.to_toml()),
+            Err(why) => {
+                eprintln!("error: {why}");
+                return ExitCode::FAILURE;
+            }
+        },
+        Config::Check => match check_settings(&file).and_then(|settings| {
+            // The theme file too, apart: a mistake there leaves the other settings be.
+            let built_in = settings.theme == "auto"
+                || crate::theme::Theme::built_in(&settings.theme).is_some();
+            if !built_in {
+                crate::theme::Theme::named(&settings.theme, &paths.config_dir)
+                    .map_err(|why| vec![why])?;
+            }
+            Ok(settings)
+        }) {
             Ok(_) => println!("ok {shown}"),
             Err(errors) => {
                 for error in errors {

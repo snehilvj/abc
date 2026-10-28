@@ -57,13 +57,19 @@ pub fn run(paths: Paths) -> Result<()> {
     };
     let mut app = App::new(paths.profile.name());
     // Ask the terminal for its background before raw mode takes over the input.
-    let mut theme = Theme::resolve(theme_choice(&settings.theme, &mut app));
+    let mut theme =
+        theme_named(&settings.theme, &paths.config_dir, &mut app).unwrap_or_else(|why| {
+            let text = format!("{why} · using auto");
+            app.status = Some(Status::new(StatusKind::Error, text));
+            Theme::resolve(ThemeChoice::Auto)
+        });
     apply(&settings, &mut app, &mut theme);
     if let Some(why) = broken {
         let text = format!("{} · using the defaults", settings::one_line(&why));
         app.status = Some(Status::new(StatusKind::Error, text));
     }
     let mut watch = settings::Watch::new(&paths.config_file());
+    let mut theme_watch = theme_file_of(&settings.theme, &paths).map(|f| settings::Watch::new(&f));
     let mut watched = Instant::now();
 
     // abc's own log, beside abcd's; abcd makes the folder private when it starts.
@@ -107,8 +113,12 @@ pub fn run(paths: Paths) -> Result<()> {
                 }
                 if watched.elapsed() >= SETTINGS_CHECK {
                     watched = Instant::now();
-                    if watch.changed() {
-                        reload(&paths, &mut app, &mut theme);
+                    let theme_changed = theme_watch.as_mut().is_some_and(|w| w.changed());
+                    if watch.changed() || theme_changed {
+                        if let Some(name) = reload(&paths, &mut app, &mut theme) {
+                            theme_watch =
+                                theme_file_of(&name, &paths).map(|f| settings::Watch::new(&f));
+                        }
                         break;
                     }
                 }
@@ -267,17 +277,39 @@ fn receive(
     }
 }
 
-/// Applies the settings file again after it changed, or says why it can't.
-fn reload(paths: &Paths, app: &mut App, theme: &mut Theme) {
+/// The theme file `name` would be read from, if it isn't a built-in theme.
+fn theme_file_of(name: &str, paths: &Paths) -> Option<PathBuf> {
+    let built_in = name == "auto" || Theme::built_in(name).is_some();
+    (!built_in).then(|| paths.config_dir.join("themes").join(format!("{name}.toml")))
+}
+
+/// The theme the `theme` setting names: built in, or a file in `themes/`.
+fn theme_named(name: &str, config_dir: &std::path::Path, app: &mut App) -> Result<Theme, String> {
+    if name == "auto" || Theme::built_in(name).is_some() {
+        return Ok(Theme::resolve(theme_choice(name, app)));
+    }
+    Theme::named(name, config_dir)
+}
+
+/// Applies the settings file, or the theme file, again after it changed, or
+/// says why it can't. The theme's name, when the settings loaded.
+fn reload(paths: &Paths, app: &mut App, theme: &mut Theme) -> Option<String> {
     match crate::cli::check_settings(&paths.config_file()) {
         Ok(settings) => {
+            app.status = Some(Status::new(StatusKind::Info, "settings reloaded"));
             // "auto" asked the terminal at startup; it can't be asked again in raw mode.
             if settings.theme != "auto" {
-                *theme = Theme::resolve(theme_choice(&settings.theme, app));
+                match theme_named(&settings.theme, &paths.config_dir, app) {
+                    Ok(named) => *theme = named,
+                    Err(why) => {
+                        let text = format!("{why} · keeping the last good theme");
+                        app.status = Some(Status::new(StatusKind::Error, text));
+                    }
+                }
             }
             apply(&settings, app, theme);
             crate::term::set_mouse(settings.mouse.enabled);
-            app.status = Some(Status::new(StatusKind::Info, "settings reloaded"));
+            Some(settings.theme)
         }
         Err(errors) => {
             let why = errors.into_iter().next().unwrap_or_default();
@@ -286,6 +318,7 @@ fn reload(paths: &Paths, app: &mut App, theme: &mut Theme) {
                 settings::one_line(&why)
             );
             app.status = Some(Status::new(StatusKind::Error, text));
+            None
         }
     }
 }
@@ -636,6 +669,42 @@ mod tests {
             "config.toml line 2: unknown field `sidebar_widht` · keeping the last good settings"
         );
         assert_eq!(app.widths.sidebar, 30, "the last good ones");
+    }
+
+    #[test]
+    fn a_theme_file_applies_and_a_broken_one_keeps_the_last_good_theme() {
+        use ratatui::style::Color;
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_path_buf();
+        let paths = Paths::new(abc_core::paths::Profile::new("dev").unwrap(), move |var| {
+            (var == "HOME").then(|| home.clone().into_os_string())
+        })
+        .unwrap();
+        std::fs::create_dir_all(paths.config_dir.join("themes")).unwrap();
+        std::fs::write(paths.config_file(), "theme = \"mine\"\n").unwrap();
+        let theme_file = paths.config_dir.join("themes/mine.toml");
+        std::fs::write(&theme_file, "inherit = \"light\"\n[ui]\naccent = \"red\"\n").unwrap();
+        let mut app = App::new("dev");
+        let mut theme = Theme::dark();
+        assert_eq!(
+            reload(&paths, &mut app, &mut theme).as_deref(),
+            Some("mine")
+        );
+        assert_eq!(
+            (theme.accent, theme.text),
+            (Color::Red, Theme::light().text)
+        );
+        assert_eq!(theme_file_of("mine", &paths), Some(theme_file.clone()));
+        assert_eq!(theme_file_of("dark", &paths), None, "built in");
+
+        std::fs::write(&theme_file, "[ui]\naccent = \"#zz\"\n").unwrap();
+        reload(&paths, &mut app, &mut theme);
+        let status = app.status.unwrap().text;
+        assert!(
+            status.ends_with("· keeping the last good theme"),
+            "{status}"
+        );
+        assert_eq!(theme.accent, Color::Red);
     }
 
     #[test]

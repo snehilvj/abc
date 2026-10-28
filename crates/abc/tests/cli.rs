@@ -78,3 +78,43 @@ fn config_path_template_and_check() {
     assert_eq!(bad.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&bad.stderr).contains("unknown field `widht`"));
 }
+
+#[test]
+fn themes_are_printed_to_copy_and_checked_when_in_use() {
+    let home = tempfile::tempdir().unwrap();
+    let printed = abc(
+        home.path(),
+        &["--profile", "test", "config", "theme", "light"],
+    );
+    assert!(printed.status.success());
+    let light = String::from_utf8_lossy(&printed.stdout).to_string();
+    assert!(light.contains("inherit = \"light\"") && light.contains("[syntax]"));
+
+    let config = home.path().join("config/abc/test");
+    std::fs::create_dir_all(config.join("themes")).unwrap();
+    std::fs::write(config.join("themes/mine.toml"), &light).unwrap();
+    std::fs::write(config.join("config.toml"), "theme = \"mine\"\n").unwrap();
+    let ok = abc(home.path(), &["--profile", "test", "config", "check"]);
+    assert!(
+        ok.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    let mine = abc(
+        home.path(),
+        &["--profile", "test", "config", "theme", "mine"],
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&mine.stdout),
+        light,
+        "yours, read back"
+    );
+
+    std::fs::write(config.join("themes/mine.toml"), "[ui]\naccent = \"#zz\"\n").unwrap();
+    let bad = abc(home.path(), &["--profile", "test", "config", "check"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("ui.accent: \"#zz\" isn't a colour"));
+
+    let nope = abc(home.path(), &["config", "theme", "../x"]);
+    assert!(String::from_utf8_lossy(&nope.stderr).contains("isn't a theme name"));
+}
