@@ -33,9 +33,11 @@ with a which-key popup that lists what can follow after
 `keys.which_key.delay_ms` (default 300 ms). `ctrl-p`, `tab`, `?` and `q` stay
 direct.
 
-`[keys]` maps key sequences to actions (`"space r a" = "add_repo"`), with
-`[keys.<pane>]` tables for pane-specific keys and `[keys.groups]` naming the
-popup's groups. [crokey](https://crates.io/crates/crokey) parses and prints each
+`[keys.global]` maps key sequences to actions (`"space r a" = "add_repo"`),
+with `[keys.<pane>]` tables (`sidebar`, `explorer`, `viewer`, `visual`) for
+pane-specific keys and `[keys.groups]` naming the popup's groups. They add to
+or replace the built-in bindings; `"none"` unbinds one. (Global keys get a
+table of their own because confique can't mix free keys with named tables.) [crokey](https://crates.io/crates/crokey) parses and prints each
 key; the sequence matcher is our own small trie (prefix state, timeout, popup
 model), because the crates that offer leader sequences are pre-1.0 or a few
 months old. The key bar, the help overlay and the popup all render from the

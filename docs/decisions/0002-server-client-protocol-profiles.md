@@ -36,7 +36,9 @@ and exits cleanly on SIGTERM or `server.shutdown`.
 
 **Mismatch.** At startup, if protocol or build differ, the client asks its
 sibling `abcd --print-build-id`. If that differs from the running server, the
-server is stale: the client restarts it, at most once. If it matches, the client
+server is stale: the client restarts it, at most once. It stops it with
+SIGTERM to the pid in the server's hello rather than a request, because an
+abcd of another protocol hangs up after its hello and would never hear one. If it matches, the client
 itself is stale: it keeps working with a warning when the protocol matches, and
 asks to be reopened when it does not. A client that reconnects mid-session never
 restarts the server, so two builds never take turns killing each other.
