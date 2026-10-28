@@ -8,10 +8,13 @@ Decisions: `docs/decisions/`. Screen designs: https://claude.ai/artifact/6oZWb4B
 - `just check` (needs cargo-insta): fmt, clippy, tests and snapshots, docs. CI runs it on every push.
 - `just gallery <screen> [--state s] [--theme dark|light]`: a screen on fake data (needs a
   Nerd Font). Snapshots: `cargo insta review`. `just tape <screen>`: its GIF in `target/vhs/`.
+- `just fixtures` then `just dev <args>`: this checkout against fixture repos in the `dev`
+  profile, apart from `stable`. `abc logs`, `abc server status|restart|stop`, `abc config check`.
+- `just install`: abc and abcd side by side in `~/.cargo/bin`.
 
 ## Crates
 
-- `crates/abc-core`: model types, protocol, profile paths, client connection.
+- `crates/abc-core`: model types, protocol, profile paths, settings, client connection, fixtures.
 - `crates/abcd`: the server. Owns all state; the only code that touches files or git.
 - `crates/abc`: Ratatui client and CLI. Acts only through abcd.
 
