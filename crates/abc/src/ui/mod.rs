@@ -2,13 +2,12 @@
 
 pub mod sidebar;
 
-use abc_core::model::{Checks, Head, PrState, PullRequest, Review};
+use abc_core::model::{Checks, Head, PrState, Review};
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{List, ListItem, ListState, StatefulWidget};
 
 use crate::app::{App, Connection, Entry, Focus, StatusKind};
 use crate::icons::Icons;
@@ -84,9 +83,19 @@ impl Geometry {
         }
     }
 
-    /// First and last content rows (between the pane headers and the separator).
+    /// The tab bar, under a blank row below the title.
+    fn tab_row(&self) -> u16 {
+        self.top + 2
+    }
+
+    /// One row holds every pane's header: WORKTREES, the worktree's folder, the file.
+    fn header_row(&self) -> u16 {
+        self.top + 3
+    }
+
+    /// First and last content rows: a blank row under the headers, down to the separator.
     fn content_rows(&self) -> (u16, u16) {
-        (self.top + 3, self.bottom - 3)
+        (self.top + 5, self.bottom - 3)
     }
 }
 
@@ -118,17 +127,18 @@ fn chrome(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Icon
     put(buf, g.left, g.bottom, "└", border);
     put(buf, g.right, g.bottom, "┘", border);
 
-    // Sidebar divider, tab bar, and the line under it.
+    // Sidebar divider, tab bar, and the header line under it.
+    let header = g.header_row();
     vline(buf, g.d1, g.top + 1, g.bottom - 3, border);
     buf.set_string(
         g.d1 + 2,
-        g.top + 1,
+        g.tab_row(),
         "Code",
         theme.bold().add_modifier(Modifier::UNDERLINED),
     );
-    hline(buf, g.top + 2, g.d1 + 1, g.right - 1, border);
-    put(buf, g.d1, g.top + 2, "├", border);
-    put(buf, g.right, g.top + 2, "┤", border);
+    hline(buf, header, g.d1 + 1, g.right - 1, border);
+    put(buf, g.d1, header, "├", border);
+    put(buf, g.right, header, "┤", border);
 
     // The separator above the key bar.
     hline(buf, g.bottom - 2, g.left + 1, g.right - 1, border);
@@ -137,15 +147,15 @@ fn chrome(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Icon
     put(buf, g.d1, g.bottom - 2, "┴", border);
 
     if g.split {
-        put(buf, g.d2, g.top + 2, "┬", border);
-        vline(buf, g.d2, g.top + 3, g.bottom - 3, border);
+        put(buf, g.d2, header, "┬", border);
+        vline(buf, g.d2, header + 1, g.bottom - 3, border);
         put(buf, g.d2, g.bottom - 2, "┴", border);
         if let Some((_, w)) = app.current_worktree() {
             let room = g.cols.explorer.saturating_sub(3) as usize;
             let path = ltrunc(&w.path.display().to_string(), room);
             buf.set_string(
                 g.d1 + 2,
-                g.top + 2,
+                header,
                 format!(" {path} "),
                 theme.header(app.focus == Focus::Explorer),
             );
@@ -195,11 +205,7 @@ fn title<'a>(app: &'a App, theme: &Theme, icons: &Icons) -> Line<'a> {
         }
         if let Some(pr) = &w.pr {
             spans.push(dot());
-            let quiet = PullRequest {
-                checks: None,
-                ..pr.clone()
-            };
-            spans.extend(sidebar::pr_badge(Some(&quiet), theme, icons));
+            spans.extend(sidebar::pr_badge(pr, theme, icons));
             let state = match pr.state {
                 PrState::Open => "open",
                 PrState::Draft => "draft",
@@ -250,67 +256,41 @@ fn missing_repo_at_cursor(app: &App) -> Option<&str> {
 
 fn sidebar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Icons) {
     let focused = app.focus == Focus::Sidebar || app.current_worktree().is_none();
-    buf.set_string(
-        g.left + 2,
-        g.top + 1,
-        "WORKTREES",
-        theme.header(focused).add_modifier(Modifier::BOLD),
-    );
-    let area = Rect::new(
-        g.left + 1,
-        g.top + 2,
-        g.cols.sidebar,
-        g.bottom - 2 - (g.top + 2),
-    );
-    let width = g.cols.sidebar;
-    let note = |text: &'static str| {
-        let line = Line::from(vec![Span::raw(" "), Span::styled(text, theme.dim())]);
-        Some(vec![line])
-    };
-    let message = match app.connection {
-        Connection::Starting => note("Loading…"),
-        Connection::StartFailed | Connection::Incompatible { .. } => Some(Vec::new()),
-        _ if app.repos.is_empty() => note("No repositories yet."),
+    let header = theme.header(focused).add_modifier(Modifier::BOLD);
+    buf.set_string(g.left + 3, g.header_row(), "WORKTREES", header);
+    let (first, last) = g.content_rows();
+    let height = (last - first + 1) as usize;
+    let note = match app.connection {
+        Connection::Starting => Some("Loading…"),
+        Connection::StartFailed | Connection::Incompatible { .. } => Some(""),
+        _ if app.repos.is_empty() => Some("No repositories yet."),
         _ => None,
     };
-    if let Some(lines) = message {
-        for (i, line) in lines.iter().enumerate() {
-            buf.set_line(area.x, area.y + 1 + i as u16, line, width);
-        }
+    if let Some(note) = note {
+        buf.set_string(g.left + 3, first, note, theme.dim());
         return;
     }
-    let current = app.current.as_deref();
-    let items: Vec<ListItem> = app
-        .entries()
-        .into_iter()
-        .map(|entry| match entry {
-            Entry::Repo(r) => ListItem::new(sidebar::repo_line(&app.repos[r], width, theme, icons)),
-            Entry::Worktree(r, w) => {
-                let w = &app.repos[r].worktrees()[w];
-                let lines = sidebar::worktree_lines(
-                    w,
-                    current == Some(w.path.as_path()),
-                    app.sidebar_style,
-                    width,
-                    theme,
-                    icons,
-                );
-                ListItem::new(lines)
-            }
-        })
-        .collect();
-    let highlight = if focused {
-        Style::new().bg(theme.selection)
-    } else {
-        Style::new()
+    let options = sidebar::Options {
+        style: app.sidebar_style,
+        repo_gap: app.repo_gap,
+        worktree_gap: app.worktree_gap,
+        width: g.cols.sidebar,
     };
-    let mut state = ListState::default().with_selected(Some(app.sidebar_cursor));
-    StatefulWidget::render(
-        List::new(items).highlight_style(highlight),
-        area,
-        buf,
-        &mut state,
-    );
+    let rows = sidebar::rows(&app.repos, app.current.as_deref(), &options, theme, icons);
+    // Scroll just far enough to keep the cursor's last line on screen.
+    let cursor_last = rows
+        .iter()
+        .rposition(|r| r.entry == Some(app.sidebar_cursor))
+        .unwrap_or(0);
+    let offset = (cursor_last + 1).saturating_sub(height);
+    for (i, row) in rows.iter().skip(offset).take(height).enumerate() {
+        let y = first + i as u16;
+        buf.set_line(g.left + 1, y, &row.line, g.cols.sidebar);
+        if focused && row.entry == Some(app.sidebar_cursor) {
+            let line = Rect::new(g.left + 1, y, g.cols.sidebar, 1);
+            buf.set_style(line, Style::new().bg(theme.selection));
+        }
+    }
 }
 
 /// How a notice line is styled.

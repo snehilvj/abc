@@ -84,6 +84,10 @@ pub struct App {
     /// Index into `entries()`.
     pub sidebar_cursor: usize,
     pub sidebar_style: SidebarStyle,
+    /// Blank rows between repos in the sidebar.
+    pub repo_gap: u16,
+    /// Blank rows between worktrees in the detailed sidebar.
+    pub worktree_gap: u16,
     pub widths: Widths,
     pub connection: Connection,
     pub status: Option<Status>,
@@ -105,6 +109,8 @@ impl App {
             focus: Focus::Sidebar,
             sidebar_cursor: 0,
             sidebar_style: SidebarStyle::default(),
+            repo_gap: 2,
+            worktree_gap: 1,
             widths: Widths::default(),
             connection: Connection::Starting,
             status: None,

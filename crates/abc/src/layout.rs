@@ -15,7 +15,7 @@ pub struct Widths {
 impl Default for Widths {
     fn default() -> Self {
         Self {
-            sidebar: 34,
+            sidebar: 38,
             explorer: 28,
             viewer_min: 40,
             explorer_min: 20,
@@ -60,62 +60,34 @@ pub fn too_small(width: u16, height: u16) -> bool {
 mod tests {
     use super::*;
 
+    fn cols(sidebar: u16, explorer: u16, viewer: u16) -> Columns {
+        Columns {
+            sidebar,
+            explorer,
+            viewer,
+        }
+    }
+
     #[test]
     fn full_width_uses_the_configured_widths() {
-        let c = columns(120, Widths::default());
-        assert_eq!(
-            c,
-            Columns {
-                sidebar: 34,
-                explorer: 28,
-                viewer: 54
-            }
-        );
+        assert_eq!(columns(120, Widths::default()), cols(38, 28, 50));
     }
 
     #[test]
     fn the_viewer_shrinks_first() {
-        // 34 + 28 + 40 + 4 = 106: the narrowest width that keeps the explorer whole.
-        assert_eq!(
-            columns(106, Widths::default()),
-            Columns {
-                sidebar: 34,
-                explorer: 28,
-                viewer: 40
-            }
-        );
+        // 38 + 28 + 40 + 4 = 110: the narrowest width that keeps the explorer whole.
+        assert_eq!(columns(110, Widths::default()), cols(38, 28, 40));
     }
 
     #[test]
     fn then_the_explorer_shrinks_to_its_minimum() {
-        assert_eq!(
-            columns(100, Widths::default()),
-            Columns {
-                sidebar: 34,
-                explorer: 22,
-                viewer: 40
-            }
-        );
-        assert_eq!(
-            columns(98, Widths::default()),
-            Columns {
-                sidebar: 34,
-                explorer: 20,
-                viewer: 40
-            }
-        );
+        assert_eq!(columns(104, Widths::default()), cols(38, 22, 40));
+        assert_eq!(columns(102, Widths::default()), cols(38, 20, 40));
     }
 
     #[test]
     fn then_the_viewer_takes_what_is_left() {
-        assert_eq!(
-            columns(80, Widths::default()),
-            Columns {
-                sidebar: 34,
-                explorer: 20,
-                viewer: 22
-            }
-        );
+        assert_eq!(columns(80, Widths::default()), cols(38, 20, 18));
     }
 
     #[test]
