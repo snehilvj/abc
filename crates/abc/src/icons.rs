@@ -64,10 +64,12 @@ impl Icons {
         pr_closed: "",
         checks_passing: "✓",
         checks_failing: "✗",
-        checks_pending: "…",
+        // Hollow: not finished. An ellipsis read like cut-off text.
+        checks_pending: "○",
         changed: "●",
-        ahead: "⇡",
-        behind: "⇣",
+        // Plain arrows: common fonts (Menlo) have them, so they render full size.
+        ahead: "↑",
+        behind: "↓",
         lock: "locked",
         alert: "",
     };
