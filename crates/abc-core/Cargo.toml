@@ -17,5 +17,13 @@ tokio.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 
+[features]
+# Fixture repositories for development and tests: `just fixtures`.
+fixtures = []
+
+[[example]]
+name = "fixtures"
+required-features = ["fixtures"]
+
 [lints]
 workspace = true
