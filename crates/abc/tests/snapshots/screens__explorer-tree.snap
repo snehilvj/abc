@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
+│  WORKTREES                           │ Code                                                                          │
+│                                      ├─ ~/code/wt/privue-platform/gst-check ┬────────────────────────────────────────┤
+│    privue-platform                  │   .github                           │ verify.ts                              │
+│    gst-check               #142   │   apps                              │ The viewer is the next screen.         │
+│       feat/gst-check      3    2  │   data                              │                                        │
+│     gst-rounding            #139   │   docs                              │                                        │
+│       fix/gst-rounding          1  │   generated                         │                                        │
+│     ledger-round            #141    │   packages                          │                                        │
+│       fix/ledger-round    1        │     integrations                    │                                        │
+│       privue-platform               │       gst                           │                                        │
+│       main                          │         client.ts                   │                                        │
+│                                      │         verify.ts                   │                                        │
+│    ecourts                          │     scoring                         │                                        │
+│     gst-lookup               #88   │     shared                          │                                        │
+│       feat/gst-lookup           4  │   .gitignore                        │                                        │
+│     ocr-retry                        │   package.json                      │                                        │
+│       feat/ocr-retry      7  local │   README.md                         │                                        │
+│       ecourts                       │   tsconfig.json                     │                                        │
+│       main                      3  │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+├──────────────────────────────────────┴──────────────────────────────────────┴────────────────────────────────────────┤
+│ j k move · enter open · gg G top/end · h l focus · space commands · ^p find · tab last worktree · ? help · q quit    │
+└─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘
