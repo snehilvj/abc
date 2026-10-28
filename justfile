@@ -2,13 +2,32 @@
 default:
     @just --list
 
-# Everything CI checks: formatting, clippy with warnings as errors, every test
-# (snapshots must match, and no snapshot file may lack its test), and docs.
-check:
+# Everything CI checks, each part also a recipe of its own (CI runs them as separate jobs)
+check: lock fmt clippy test docs
+
+# The lock file is up to date with every Cargo.toml
+lock:
+    cargo metadata --locked --format-version 1 > /dev/null
+
+# Formatting
+fmt:
     cargo fmt --all --check
+
+# Clippy, warnings as errors, tests and every feature included
+clippy:
     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+
+# Every test; snapshots must match, and no snapshot file may lack its test (needs cargo-insta)
+test:
     cargo insta test --workspace --all-features --check --unreferenced=reject
+
+# Docs, warnings as errors
+docs:
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
+
+# Dependencies' advisories, licences, duplicates and sources (needs cargo-deny)
+deny:
+    cargo deny check
 
 # Open a screen on fake data, e.g. `just gallery frame --state sidebar`
 gallery *args:
