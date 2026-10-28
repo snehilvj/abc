@@ -24,6 +24,9 @@ asks GitHub for pull request status.
 From a [release](https://github.com/snehilvj/abc/releases): download the
 archive for your system, check it against its `.sha256`, and put `abc` and
 `abcd` in the same folder on your `PATH`. abc looks for abcd beside itself.
+The binaries aren't signed: on macOS, one downloaded in a browser is
+quarantined, so run `xattr -d com.apple.quarantine abc abcd` once, or
+download with `curl`.
 
 From source, with [Rust](https://rustup.rs) (the toolchain is pinned in
 `rust-toolchain.toml`) and [just](https://just.systems):
