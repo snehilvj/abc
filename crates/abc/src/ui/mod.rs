@@ -117,7 +117,7 @@ impl Geometry {
         }
     }
 
-    /// The tab bar, right under the title. WORKTREES heads the sidebar on the same row.
+    /// The row under the title: "Worktrees" heads the sidebar, "Code" the explorer and viewer.
     fn tab_row(&self) -> u16 {
         self.top + 1
     }
@@ -133,7 +133,7 @@ impl Geometry {
         (self.top + 3, self.bottom - 3)
     }
 
-    /// The sidebar's rows: it has no header line, so they start right under WORKTREES.
+    /// The sidebar's rows: it has no header line, so they start right under "Worktrees".
     fn sidebar_rows(&self) -> (u16, u16) {
         (self.header_row(), self.bottom - 3)
     }
@@ -167,15 +167,11 @@ fn chrome(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     put(buf, g.left, g.bottom, "└", border);
     put(buf, g.right, g.bottom, "┘", border);
 
-    // Sidebar divider, tab bar, and the header line under it.
+    // Sidebar divider, the explorer and viewer's heading, and the line under it.
     let header = g.header_row();
     vline(buf, g.d1, g.top + 1, g.bottom - 3, border);
-    buf.set_string(
-        g.d1 + 2,
-        g.tab_row(),
-        "Code",
-        theme.bold().add_modifier(Modifier::UNDERLINED),
-    );
+    let code_focused = app.focus != Focus::Sidebar && app.current_worktree().is_some();
+    buf.set_string(g.d1 + 2, g.tab_row(), "Code", heading(code_focused, theme));
     hline(buf, header, g.d1 + 1, g.right - 1, border);
     put(buf, g.d1, header, "├", border);
     put(buf, g.right, header, "┤", border);
@@ -297,10 +293,23 @@ fn missing_repo_at_cursor(app: &App) -> Option<&str> {
     }
 }
 
+/// "Worktrees" and "Code": bold, in the accent colour on the side with focus.
+fn heading(focused: bool, theme: &Theme) -> Style {
+    if focused {
+        theme.header(true)
+    } else {
+        theme.bold()
+    }
+}
+
 fn sidebar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     let focused = app.focus == Focus::Sidebar || app.current_worktree().is_none();
-    let header = theme.header(focused).add_modifier(Modifier::BOLD);
-    buf.set_string(g.left + 3, g.tab_row(), "WORKTREES", header);
+    buf.set_string(
+        g.left + 3,
+        g.tab_row(),
+        "Worktrees",
+        heading(focused, theme),
+    );
     let (first, last) = g.sidebar_rows();
     let height = (last - first + 1) as usize;
     let note = match app.connection {

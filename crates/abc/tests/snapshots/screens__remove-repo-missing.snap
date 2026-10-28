@@ -3,7 +3,7 @@ source: crates/abc/tests/screens.rs
 expression: screen
 ---
 ┌ abc · old-scraper ────────────────────────────────────────────────────────────────────────────────────────────── dev ┐
-│  WORKTREES                           │ Code                                                                          │
+│  Worktrees                           │ Code                                                                          │
 │    privue-platform                  ├───────────────────────────────────────────────────────────────────────────────┤
 │    gst-check               #142   │                                                                               │
 │       feat/gst-check      3    2  │                                                                               │

@@ -3,7 +3,7 @@ source: crates/abc/tests/screens.rs
 expression: screen
 ---
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
-│  WORKTREES                           │ Code                                                                          │
+│  Worktrees                           │ Code                                                                          │
 │    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   generated/rows.rs · rust ──────────┤
 │    gst-check               #142   │   .github                           │  9967  pub const ROW_9967: u32 = 9967; │
 │       feat/gst-check      3    2  │   apps                              │  9968  pub const ROW_9968: u32 = 9968; │

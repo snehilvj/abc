@@ -3,7 +3,7 @@ source: crates/abc/tests/screens.rs
 expression: screen
 ---
 ┌ abc · ecourts / gst-lookup ·   feat/gst-lookup ·   #88 draft ·   checks running · review required ─────────── dev ┐
-│  WORKTREES                           │ Code                                                                          │
+│  Worktrees                           │ Code                                                                          │
 │    ecourts                          ├─ ~/code/wt/ecourts/gst-lookup ───────┬────────────────────────────────────────┤
 │    gst-lookup               #88   │   ecourts                           │ No file open.                          │
 │       feat/gst-lookup           4  │   tests                             │                                        │

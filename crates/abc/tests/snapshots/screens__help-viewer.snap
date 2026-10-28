@@ -3,7 +3,7 @@ source: crates/abc/tests/screens.rs
 expression: screen
 ---
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
-│  WORKTREES                ┌ Keys · Viewer ───────────────────────────────────────────────┐                           │
+│  Worktrees                ┌ Keys · Viewer ───────────────────────────────────────────────┐                           │
 │    privue-platform       │                                                              │tions/gst/verify.ts · ts ──┤
 │    gst-check             │ Viewer                                                       │ normalise } from "../../… │
 │       feat/gst-check    │   h j k l  ← ↓ ↑ →   move; a count first repeats             │ype { GstClient } from ".… │
