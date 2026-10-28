@@ -1,0 +1,21 @@
+# Weekly PRs for newer dependencies. Minor and patch updates come together in
+# one PR per ecosystem (tree-sitter's crates must move together anyway);
+# major ones come one at a time.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
