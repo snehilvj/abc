@@ -1,6 +1,5 @@
-//! Finding text in the viewer: `/`, `n`, `N`, `*` and `#`. Patterns are
-//! plain text rather than regular expressions, and smart-case, as with Vim's
-//! `smartcase`: all lower case matches either case; a capital makes case count.
+//! Finding text in the viewer: `/`, `n`, `N`, `*` and `#`. Matching itself
+//! is `abc_core::text`'s, shared with find in files: plain text, smart-case.
 
 use crate::motion::Pos;
 
@@ -37,37 +36,9 @@ impl Search {
         }
     }
 
-    fn case_counts(&self) -> bool {
-        self.whole_word || self.pattern.chars().any(char::is_uppercase)
-    }
-
     /// The matches on `line`, as columns: each one's first, and one past its last.
     pub fn matches(&self, line: &str) -> Vec<(usize, usize)> {
-        let pattern: Vec<char> = self.pattern.chars().collect();
-        if pattern.is_empty() {
-            return Vec::new();
-        }
-        let chars: Vec<char> = line.chars().collect();
-        let case = self.case_counts();
-        let same = |a: char, b: char| a == b || (!case && a.to_lowercase().eq(b.to_lowercase()));
-        let word = |i: usize| {
-            chars
-                .get(i)
-                .is_some_and(|c| c.is_alphanumeric() || *c == '_')
-        };
-        (0..(chars.len() + 1).saturating_sub(pattern.len()))
-            .filter(|&i| {
-                pattern
-                    .iter()
-                    .enumerate()
-                    .all(|(j, p)| same(chars[i + j], *p))
-            })
-            .filter(|&i| {
-                let end = i + pattern.len();
-                !self.whole_word || !((i > 0 && word(i - 1)) || word(end))
-            })
-            .map(|i| (i, i + pattern.len()))
-            .collect()
+        abc_core::text::matches(&self.pattern, self.whole_word, line)
     }
 
     /// The next match from `p`, `forward` or back, going round the file's ends.

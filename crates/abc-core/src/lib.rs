@@ -7,3 +7,4 @@ pub mod paths;
 pub mod protocol;
 pub mod settings;
 pub mod source;
+pub mod text;
