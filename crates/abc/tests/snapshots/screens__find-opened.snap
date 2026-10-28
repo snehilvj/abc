@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
+│  WORKTREES                           │ Code                                                                          │
+│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/client.ts · ts ──┤
+│    gst-check               #142   │   .github                           │  1  export type Record = { gstin: str… │
+│       feat/gst-check      3    2  │   apps                              │  2                                     │
+│     gst-rounding            #139   │   data                              │  3  export interface GstClient {       │
+│       fix/gst-rounding          1  │   docs                              │  4    lookup(gstin: string): Promise<… │
+│     ledger-round            #141    │   generated                         │  5  }                                  │
+│       fix/ledger-round    1        │   packages                          │  6                                     │
+│       privue-platform               │     integrations                    │  7  export class HttpGstClient implem… │
+│       main                          │       gst                           │  8    constructor(private readonly ba… │
+│                                      │         client.ts                   │  9                                     │
+│    ecourts                          │         verify.ts                   │ 10    async lookup(gstin: string): Pr… │
+│     gst-lookup               #88   │     scoring                         │ 11      const response = await fetch(… │
+│       feat/gst-lookup           4  │     shared                          │ 12      if (response.status === 404) … │
+│     ocr-retry                        │   .gitignore                        │ 13      return (await response.json()… │
+│       feat/ocr-retry      7  local │   package.json                      │ 14    }                                │
+│       ecourts                       │   README.md                         │ 15  }                                  │
+│       main                      3  │   tsconfig.json                     │ 16                                     │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+│                                      │                                      │                                        │
+├──────────────────────────────────────┴──────────────────────────────────────┴──────────────────── 4:10 · 1–16 of 16 ─┤
+│ h j k l move · w b e words · / n find · v V select · : line · esc explorer · space commands · ? help · q quit        │
+└ /gstin · 2 of 5 ────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘
