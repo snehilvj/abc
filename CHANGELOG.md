@@ -22,8 +22,8 @@ worktrees, with a background server that owns the state.
   what `.gitignore` leaves out, out. It follows files added and removed on
   disk, keeping its open folders and selection, and the viewer follows the
   open file as it changes, keeping its place.
-- **Mouse wheel** scrolls the pane under the pointer; abc keeps the terminal
-  from scrolling its history behind it.
+- **Scrolling by keys alone**: abc takes the mouse so its wheel scrolls
+  nothing, neither abc nor the terminal's history behind it.
 - **Viewer**: read-only and Vim-style. Rust, TypeScript, TSX, JavaScript and
   Python are highlighted with tree-sitter, and some 220 other file types
   (Markdown and MDX, TOML, YAML, JSON, HTML, Jinja, shell, Dockerfiles, SQL,

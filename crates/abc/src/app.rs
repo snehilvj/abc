@@ -285,8 +285,6 @@ pub struct App {
     pub switcher_rows: usize,
     /// How long typing pauses before abcd checks a repository to add.
     pub check_delay: std::time::Duration,
-    /// Lines a notch of the mouse wheel scrolls (`mouse.scroll_lines`).
-    pub scroll_lines: usize,
     /// A count typed before a viewer motion: the 12 of `12j`.
     pub count: Option<usize>,
     /// `f`, `F`, `t` or `T`, waiting for the character to find.
@@ -347,7 +345,6 @@ impl App {
             which_key_delay: keys::WHICH_KEY_DELAY,
             switcher_rows: crate::switcher::ROWS,
             check_delay: crate::add_repo::DELAY,
-            scroll_lines: 3,
             count: None,
             finding: None,
             last_find: None,
@@ -596,34 +593,6 @@ impl App {
 
     pub fn current_viewer(&self) -> Option<&Viewer> {
         self.current.as_ref().and_then(|p| self.viewers.get(p))
-    }
-
-    /// A notch of the mouse wheel over `pane`, `down` or up: the viewer and
-    /// explorer scroll, the sidebar moves a worktree. Focus stays put, and a
-    /// dialog or palette open takes no notice.
-    pub fn wheel(&mut self, pane: Focus, down: bool) {
-        let open = self.switcher.is_some()
-            || self.find_open
-            || self.add_repo.is_some()
-            || self.remove_repo.is_some()
-            || self.help;
-        if open {
-            return;
-        }
-        let lines = self.scroll_lines as isize * if down { 1 } else { -1 };
-        match pane {
-            Focus::Viewer => {
-                if let Some(viewer) = self.current_viewer_mut() {
-                    viewer.scroll_by(lines);
-                }
-            }
-            Focus::Explorer => {
-                if let Some(Listing::Ready(explorer)) = self.current_listing() {
-                    explorer.scroll(lines);
-                }
-            }
-            Focus::Sidebar => self.move_cursor(if down { 1 } else { -1 }),
-        }
     }
 
     pub fn current_viewer_mut(&mut self) -> Option<&mut Viewer> {
@@ -2873,33 +2842,6 @@ mod tests {
             app.current_viewer().unwrap().document,
             Document::Failed(_)
         ));
-    }
-
-    #[test]
-    fn the_wheel_scrolls_the_pane_under_it() {
-        let mut app = viewing("generated/rows.rs");
-        app.focus = Focus::Explorer;
-        app.wheel(Focus::Viewer, true);
-        let viewer = app.current_viewer().unwrap();
-        assert_eq!(viewer.scroll, 3, "three lines a notch");
-        assert!(viewer.cursor.line >= 3, "the cursor stays on screen");
-        assert_eq!(app.focus, Focus::Explorer, "focus stays where it was");
-        app.wheel(Focus::Viewer, false);
-        assert_eq!(app.current_viewer().unwrap().scroll, 0);
-
-        let cursor = app.sidebar_cursor;
-        app.wheel(Focus::Sidebar, true);
-        assert_ne!(app.sidebar_cursor, cursor, "a worktree a notch");
-        app.wheel(Focus::Sidebar, false);
-        assert_eq!(app.sidebar_cursor, cursor);
-
-        app.scroll_lines = 5;
-        app.wheel(Focus::Viewer, true);
-        assert_eq!(
-            app.current_viewer().unwrap().scroll,
-            5,
-            "mouse.scroll_lines"
-        );
     }
 
     #[test]

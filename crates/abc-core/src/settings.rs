@@ -145,18 +145,17 @@ pub struct Viewer {
     pub max_file_size_mb: u64,
 }
 
-/// The mouse: its wheel scrolls the pane under it.
+/// The mouse. abc scrolls by keys alone, and takes the mouse so its wheel
+/// scrolls nothing.
 #[derive(Debug, Clone, Config)]
 #[config(layer_attr(serde(deny_unknown_fields)))]
 pub struct Mouse {
     /// Whether abc takes the mouse from the terminal. Most terminals then
     /// select text only with a key held (Shift; Option in iTerm2); off, the
-    /// terminal selects as usual and its wheel scrolls nothing in abc.
+    /// terminal selects as usual, but many send its wheel to abc as the up
+    /// and down keys, which move the cursor.
     #[config(default = true)]
     pub enabled: bool,
-    /// Lines a notch of the wheel scrolls.
-    #[config(default = 3)]
-    pub scroll_lines: usize,
 }
 
 /// Adding a repository: space r a, and abc repo add.

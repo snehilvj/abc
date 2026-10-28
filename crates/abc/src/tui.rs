@@ -18,8 +18,7 @@ use abc_core::protocol::{
 };
 use abc_core::settings::{self, Settings};
 use anyhow::{Context as _, Result};
-use ratatui::crossterm::event::{self, Event, KeyEventKind, MouseEventKind};
-use ratatui::layout::Rect;
+use ratatui::crossterm::event::{self, Event, KeyEventKind};
 use tokio::runtime::Runtime;
 
 use crate::app::{App, Cmd, Msg, SidebarStyle, Status, StatusKind};
@@ -133,20 +132,6 @@ pub fn run(paths: Paths) -> Result<()> {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => app.handle_key(key),
                     Event::Paste(text) => app.paste(&text),
-                    Event::Mouse(mouse) => {
-                        let down = match mouse.kind {
-                            MouseEventKind::ScrollDown => Some(true),
-                            MouseEventKind::ScrollUp => Some(false),
-                            _ => None,
-                        };
-                        let size = terminal.size()?;
-                        let area = Rect::new(0, 0, size.width, size.height);
-                        if let Some(down) = down
-                            && let Some(pane) = ui::pane_at(area, &app, mouse.column, mouse.row)
-                        {
-                            app.wheel(pane, down);
-                        }
-                    }
                     _ => {}
                 }
             }
@@ -342,7 +327,6 @@ fn apply(settings: &Settings, app: &mut App, theme: &mut Theme) {
         crate::icons::with_overrides(&settings.icons.glyphs)
             .unwrap_or(crate::icons::Glyphs::DEFAULT),
     );
-    app.scroll_lines = settings.mouse.scroll_lines.max(1);
     app.switcher_rows = settings.switcher.rows.max(1);
     app.find.rows = settings.find.rows.max(1);
     app.find.max_lines = settings.find.max_lines;

@@ -6,9 +6,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow};
-use ratatui::crossterm::event::{
-    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
-};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::SetTitle;
 use ratatui::layout::Rect;
@@ -739,23 +737,6 @@ pub fn run(args: Args) -> Result<()> {
                     Event::Paste(text) => {
                         app.paste(&text);
                         serve(&mut app, &tx);
-                        continue;
-                    }
-                    Event::Mouse(mouse) => {
-                        let size = terminal.size()?;
-                        let screen = Rect::new(0, 0, size.width, size.height);
-                        let area = match presets[index].size {
-                            Some((w, h)) => Rect::new(0, 0, w, h).clamp(screen),
-                            None => screen,
-                        };
-                        let down = match mouse.kind {
-                            MouseEventKind::ScrollDown => true,
-                            MouseEventKind::ScrollUp => false,
-                            _ => continue,
-                        };
-                        if let Some(pane) = ui::pane_at(area, &app, mouse.column, mouse.row) {
-                            app.wheel(pane, down);
-                        }
                         continue;
                     }
                     _ => continue,

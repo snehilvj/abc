@@ -103,8 +103,9 @@ writes the dark theme as a file to change, then `theme = "mine"`. A theme
 file names the theme it starts from (`inherit`) and the colours it changes,
 by role: `[ui]`, `[git]`, `[pr]` and `[syntax]`.
 
-abc takes the mouse, so its wheel scrolls the pane under the pointer rather
-than the terminal's history. Most terminals then select text with a key held
+abc scrolls by keys alone. It takes the mouse so the wheel scrolls nothing:
+not the terminal's history, nor abc, which many terminals would send the wheel
+to as the up and down keys. Most terminals then select text with a key held
 (Shift; Option in iTerm2); `[mouse] enabled = false` gives the mouse back.
 
 ## How it works

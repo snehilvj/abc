@@ -1,9 +1,10 @@
 //! What abc asks of the terminal while it runs, beyond ratatui's raw mode and
-//! full screen: pasted text in one piece; the mouse's clicks and wheel, so the
-//! wheel scrolls abc's panes rather than the terminal's history; and no line
-//! wrapping, so a row drawn wider than abc thinks (a terminal that draws an
-//! icon two cells wide, say) can't wrap off the last row and scroll the whole
-//! screen up. All of it is undone however abc leaves, after a panic too.
+//! full screen: pasted text in one piece; the mouse's clicks and wheel, which
+//! abc drops, so the wheel scrolls nothing (not the terminal's history, nor
+//! abc, which many terminals would send it to as the up and down keys); and no
+//! line wrapping, so a row drawn wider than abc thinks (a terminal that draws
+//! an icon two cells wide, say) can't wrap off the last row and scroll the
+//! whole screen up. All of it is undone however abc leaves, after a panic too.
 
 use std::io::{Write, stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
