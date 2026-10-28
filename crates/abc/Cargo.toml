@@ -9,6 +9,12 @@ publish.workspace = true
 
 [dependencies]
 abc-core.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+crokey.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+terminal-colorsaurus.workspace = true
 
 [lints]
 workspace = true

@@ -7,3 +7,7 @@ check:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets --locked -- -D warnings
     cargo test --workspace --locked
+
+# Open a screen on fake data, e.g. `just gallery frame --state sidebar`
+gallery *args:
+    cargo run -q -p abc -- gallery {{args}}

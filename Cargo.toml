@@ -11,6 +11,14 @@ publish = false
 
 [workspace.dependencies]
 abc-core = { path = "crates/abc-core" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+crokey = "1.5"
+crossterm = "0.29"
+insta = "1"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+terminal-colorsaurus = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
