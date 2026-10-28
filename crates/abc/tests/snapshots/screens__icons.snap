@@ -1,0 +1,42 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+                                                                                                                        
+  ICONS AND LABELS                                                                                                      
+  Pick the column where every icon sits clear of its label, then press q.                                               
+                                                                                                                        
+  A  one cell after each icon                                 B  two cells after each icon                              
+                                                                                                                        
+    privue-platform                                             privue-platform                                       
+    gst-check                #142                             gst-check               #142                        
+      feat/gst-check          3   2                              feat/gst-check       3    2                      
+     gst-rounding            #139                              gst-rounding           #139                        
+      fix/gst-rounding             1                              fix/gst-rounding           1                      
+     ledger-round             #141                               ledger-round            #141                         
+      fix/ledger-round                                             fix/ledger-round                                   
+     old-spike                 #97                               old-spike                #97                         
+      spike/ocr                                                    spike/ocr                                          
+                                                                                                                        
+     repository                                                  repository                                           
+     main checkout                                               main checkout                                        
+     current worktree                                            current worktree                                     
+     branch                                                      branch                                               
+     detached HEAD                                               detached HEAD                                        
+     #142 open                                                   #142 open                                            
+     #88 draft                                                   #88 draft                                            
+     #141 merged                                                 #141 merged                                          
+     #97 closed                                                  #97 closed                                           
+     checks passing                                              checks passing                                       
+     checks failing                                              checks failing                                       
+     checks running                                              checks running                                       
+     3 changed files                                             3 changed files                                      
+     2 ahead                                                     2 ahead                                              
+     1 behind                                                    1 behind                                             
+     locked                                                      locked                                               
+     missing                                                     missing                                              
+     added privue-agents                                         added privue-agents                                  
+     abcd did not start                                          abcd did not start                                   
+     abcd restarted                                              abcd restarted                                       
+     starting abcd…                                              starting abcd…                                       
+     lost abcd                                                   lost abcd

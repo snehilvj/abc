@@ -16,5 +16,8 @@ crossterm.workspace = true
 ratatui.workspace = true
 terminal-colorsaurus.workspace = true
 
+[dev-dependencies]
+insta.workspace = true
+
 [lints]
 workspace = true

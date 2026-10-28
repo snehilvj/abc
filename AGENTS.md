@@ -6,7 +6,8 @@ Decisions: `docs/decisions/`. Screen designs: https://claude.ai/artifact/6oZWb4B
 ## Commands
 
 - `just check`: fmt, clippy `-D warnings`, all tests. Run before every commit.
-- `just gallery <screen> [--state s] [--theme dark|light]`: a screen on fake data. Needs a Nerd Font.
+- `just gallery <screen> [--state s] [--theme dark|light]`: a screen on fake data (needs a
+  Nerd Font). Its snapshots: `crates/abc/tests/snapshots/`, reviewed with `cargo insta review`.
 
 ## Crates
 
@@ -31,8 +32,7 @@ in `docs/ui/tapes/<screen>.tape` → only then wire to real data.
   tracing(-subscriber, -appender), tree-sitter(-highlight, -rust, -typescript, -javascript,
   -python), ignore, nucleo, gix, directories, tui-tree-widget, tui-input, crokey, confique,
   terminal-colorsaurus, devicons; insta, tempfile in tests. Ask before others.
-- When something breaks, write the failing test first.
-- Never edit or delete an existing test to make it pass. Stop and ask.
+- Write the failing test before the fix. Never edit or delete a test to make it pass: ask.
 - Out of scope; don't build, stub or prepare: Claude sessions, tmux, services, diffs,
   PR review (PR status via `gh` is in), SQLite, editing, language servers, SCIP, symbol
   search, remote access.
