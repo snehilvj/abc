@@ -66,6 +66,12 @@ pub fn run(paths: Paths) -> Result<()> {
     let mut watch = settings::Watch::new(&paths.config_file());
     let mut watched = Instant::now();
 
+    // abc's own log, beside abcd's; abcd makes the folder private when it starts.
+    std::fs::create_dir_all(&paths.state_dir).context("creating the state folder")?;
+    let _log = abc_core::log::start(&paths.client_log(), &settings.server.log)
+        .context("starting the log")?;
+    tracing::info!(build = abc_core::build::BUILD_ID, "abc started");
+
     let runtime = Runtime::new().context("starting the runtime")?;
     let abcd = crate::cli::sibling()?;
     let (tx, rx) = mpsc::channel::<Net>();
@@ -191,14 +197,34 @@ pub fn run(paths: Paths) -> Result<()> {
 fn receive(net: Net, app: &mut App, client: &mut Option<(Arc<Client>, Replies)>) {
     match net {
         Net::Connected(connected, replies, msg) => {
+            if let Msg::Connected { startup, .. } = &msg {
+                tracing::info!(abcd = connected.server.build, ?startup, "connected");
+            }
             *client = Some((connected, replies));
             app.apply(msg);
         }
         Net::Lost => {
+            tracing::warn!("lost abcd; reconnecting");
             *client = None;
             app.apply(Msg::ConnectionLost);
         }
-        Net::Msg(msg) => app.apply(msg),
+        Net::Msg(msg) => {
+            match &msg {
+                Msg::StartFailed(why) => tracing::error!("abcd didn't start: {why}"),
+                Msg::Incompatible { ours, theirs } => {
+                    tracing::error!(ours, theirs, "abcd speaks another protocol");
+                }
+                Msg::AddFailed { why } | Msg::RemoveFailed { why } => tracing::warn!("{why}"),
+                Msg::FilesListed {
+                    worktree,
+                    files: Err(why),
+                } => {
+                    tracing::warn!("listing {}: {why}", worktree.display());
+                }
+                _ => {}
+            }
+            app.apply(msg);
+        }
     }
 }
 

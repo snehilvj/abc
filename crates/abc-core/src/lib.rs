@@ -4,6 +4,7 @@ pub mod build;
 pub mod client;
 #[cfg(feature = "fixtures")]
 pub mod fixtures;
+pub mod log;
 pub mod model;
 pub mod paths;
 pub mod protocol;

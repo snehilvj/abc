@@ -17,6 +17,7 @@ devicons.workspace = true
 ratatui.workspace = true
 terminal-colorsaurus.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 nucleo.workspace = true
 tree-sitter.workspace = true
 tree-sitter-highlight.workspace = true

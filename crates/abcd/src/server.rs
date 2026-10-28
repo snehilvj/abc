@@ -86,7 +86,8 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
             Some(e),
         ),
     };
-    let log = crate::log::start(&paths, &settings.server.log)?;
+    let log = abc_core::log::start(&paths.server_log(), &settings.server.log)
+        .context("starting the log")?;
     if let Some(e) = broken {
         warn!("{}; using the defaults", Settings::describe(&e));
     }

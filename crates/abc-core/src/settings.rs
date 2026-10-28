@@ -209,7 +209,7 @@ pub struct Github {
 #[derive(Debug, Clone, Config)]
 #[config(layer_attr(serde(deny_unknown_fields)))]
 pub struct Server {
-    /// What abcd logs: a tracing filter, such as "info" or "abcd=debug".
+    /// What abcd and abc log: a tracing filter, such as "info" or "abcd=debug".
     #[config(default = "info", env = "ABC_LOG")]
     pub log: String,
 }
