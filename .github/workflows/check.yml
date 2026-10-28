@@ -1,10 +1,14 @@
 name: check
 
+# Every push to any branch, so work in progress is checked before it reaches a PR.
 on:
   push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
+
+# A newer push to the same branch cancels the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
@@ -21,5 +25,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
-          tool: just
+          tool: just,cargo-insta
+      # Formatting, clippy, tests and snapshots, docs. In CI, insta never writes snapshots.
       - run: just check
+
+  advisories:
+    name: dependency advisories
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories

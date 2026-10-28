@@ -2,11 +2,13 @@
 default:
     @just --list
 
-# Format check, clippy with warnings as errors, and every test
+# Everything CI checks: formatting, clippy with warnings as errors, every test
+# (snapshots must match, and no snapshot file may lack its test), and docs.
 check:
     cargo fmt --all --check
     cargo clippy --workspace --all-targets --locked -- -D warnings
-    cargo test --workspace --locked
+    cargo insta test --workspace --check --unreferenced=reject
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 
 # Open a screen on fake data, e.g. `just gallery frame --state sidebar`
 gallery *args:

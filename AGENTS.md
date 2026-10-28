@@ -5,7 +5,7 @@ Decisions: `docs/decisions/`. Screen designs: https://claude.ai/artifact/6oZWb4B
 
 ## Commands
 
-- `just check`: fmt, clippy `-D warnings`, all tests. Run before every commit.
+- `just check` (needs cargo-insta): fmt, clippy, tests and snapshots, docs. CI runs it on every push.
 - `just gallery <screen> [--state s] [--theme dark|light]`: a screen on fake data (needs a
   Nerd Font). Snapshots: `cargo insta review`. `just tape <screen>`: its GIF in `target/vhs/`.
 
