@@ -7,3 +7,4 @@ pub mod github;
 pub mod registry;
 pub mod server;
 pub mod state;
+pub mod watch;

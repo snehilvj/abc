@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::model::{FoundFile, Repo};
 
 /// Bumped on any change to the messages after `hello`.
-pub const PROTOCOL: u32 = 2;
+pub const PROTOCOL: u32 = 3;
 
 /// The first line each way: `{"hello": {...}}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +75,15 @@ pub enum Call {
     /// A client opened the worktree, for "2h ago" and `tab`. Answered with `{}`.
     #[serde(rename = "worktree.visit")]
     WorktreeVisit { worktree: PathBuf },
+    /// What this connection has open: abcd sends `files.changed` when the
+    /// worktree's files change and `file.changed` when that file does, and
+    /// says so at once for anything changed since it last sent them. Answered
+    /// with `{}`.
+    #[serde(rename = "watch")]
+    Watch {
+        worktree: PathBuf,
+        path: Option<String>,
+    },
     /// A file in a worktree. Answered with [`FileContents`](crate::model::FileContents).
     #[serde(rename = "file.read")]
     FileRead { worktree: PathBuf, path: String },
@@ -171,6 +180,15 @@ pub enum Event {
     /// Files a search found, a few at a time; `search` is its request's id.
     #[serde(rename = "search.found")]
     SearchFound { search: u64, files: Vec<FoundFile> },
+    /// The watched worktree's files changed: all of them, as they are now.
+    #[serde(rename = "files.changed")]
+    FilesChanged {
+        worktree: PathBuf,
+        files: Vec<String>,
+    },
+    /// The watched file changed on disk, or went: read it again.
+    #[serde(rename = "file.changed")]
+    FileChanged { worktree: PathBuf, path: String },
 }
 
 /// Any line abcd sends after its hello.
@@ -342,6 +360,34 @@ mod tests {
         let newer: Failure =
             serde_json::from_value(json!({"code": "rate_limited", "message": "later"})).unwrap();
         assert_eq!(newer.code, ErrorCode::Other);
+    }
+
+    #[test]
+    fn watching_and_what_it_says() {
+        golden(
+            Request {
+                id: 4,
+                call: Call::Watch {
+                    worktree: "/w".into(),
+                    path: Some("src/main.rs".into()),
+                },
+            },
+            json!({"id": 4, "method": "watch", "params": {"worktree": "/w", "path": "src/main.rs"}}),
+        );
+        golden(
+            Event::FilesChanged {
+                worktree: "/w".into(),
+                files: vec!["a.rs".into()],
+            },
+            json!({"event": "files.changed", "data": {"worktree": "/w", "files": ["a.rs"]}}),
+        );
+        golden(
+            Event::FileChanged {
+                worktree: "/w".into(),
+                path: "a.rs".into(),
+            },
+            json!({"event": "file.changed", "data": {"worktree": "/w", "path": "a.rs"}}),
+        );
     }
 
     #[test]

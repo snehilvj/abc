@@ -346,6 +346,10 @@ async fn session(paths: Paths, abcd: PathBuf, tx: mpsc::Sender<Net>, searches: S
                             };
                             Msg::Found { id, files }
                         }
+                        // abc doesn't ask to watch yet.
+                        Some(AbcdEvent::FilesChanged { .. } | AbcdEvent::FileChanged { .. }) => {
+                            continue;
+                        }
                         None => break,
                     },
                     Some(msg) = answered.recv() => msg,

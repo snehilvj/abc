@@ -24,6 +24,7 @@ use tracing::{info, warn};
 
 use crate::files::{self, Unreadable};
 use crate::state::State;
+use crate::watch::Watch;
 
 /// How often abcd checks its socket is still there.
 const SOCKET_CHECK: Duration = Duration::from_secs(1);
@@ -225,6 +226,7 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
     let mut subscription: Option<Subscription> = None;
     // The running search's cancel flag: a new search stops the last.
     let mut searching: Option<Arc<AtomicBool>> = None;
+    let mut watch = Watch::default();
 
     // Responses, and later events, go out through one writer.
     let (out, mut outgoing) = mpsc::unbounded_channel::<String>();
@@ -272,24 +274,35 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
             tokio::spawn(search.run(server.clone(), cancel, out.clone()));
             continue;
         }
+        if let Call::Watch { worktree, path } = request.call {
+            let answer = if server.state.knows(&worktree).await {
+                let every = Duration::from_secs(server.state.settings().git.status_interval.max(1));
+                watch.follow(worktree, path, every, out.clone());
+                Response::ok(request.id, &Done {})
+            } else {
+                unknown_worktree(request.id, &worktree)
+            };
+            let _ = out.send(encode(&answer));
+            continue;
+        }
         let stop = request.call == Call::ServerShutdown;
         if request.call == Call::Subscribe && subscription.is_none() {
             subscription = Some(Subscription::start(&server.state, out.clone()));
         }
-        let _ = out.send(encode(&answer(&server, request).await));
+        let _ = out.send(encode(&answer(&server, request, &watch).await));
         if stop {
             // Let the answer go out before stopping.
-            drop((subscription, out));
+            drop((subscription, watch, out));
             let _ = writer.await;
             server.stop.notify_one();
             return;
         }
     }
-    // The subscription and searches hold senders too: end them so the writer can finish.
+    // The subscription, searches and watch hold senders too: end them so the writer can finish.
     if let Some(search) = searching {
         search.store(true, Ordering::Relaxed);
     }
-    drop((subscription, out));
+    drop((subscription, watch, out));
     let _ = writer.await;
 }
 
@@ -339,7 +352,7 @@ fn reply<T: Serialize>(id: u64, result: Result<T, Failure>) -> Response {
     }
 }
 
-async fn answer(server: &Server, request: Request) -> Response {
+async fn answer(server: &Server, request: Request, watch: &Watch) -> Response {
     let id = request.id;
     let state = &server.state;
     match request.call {
@@ -374,35 +387,44 @@ async fn answer(server: &Server, request: Request) -> Response {
             if !state.knows(&worktree).await {
                 return unknown_worktree(id, &worktree);
             }
-            let files = tokio::task::spawn_blocking(move || files::list(&worktree)).await;
-            Response::ok(
-                id,
-                &Files {
-                    files: files.unwrap_or_default(),
-                },
-            )
+            let listed = worktree.clone();
+            let files = tokio::task::spawn_blocking(move || files::list(&listed))
+                .await
+                .unwrap_or_default();
+            watch.listed(&worktree, &files);
+            Response::ok(id, &Files { files })
         }
         Call::FileRead { worktree, path } => {
             if !state.knows(&worktree).await {
                 return unknown_worktree(id, &worktree);
             }
             let limit = server.file_limit();
-            let shown = path.clone();
-            let read =
-                tokio::task::spawn_blocking(move || files::read(&worktree, &path, limit)).await;
+            let (shown, read_from) = (path.clone(), worktree.clone());
+            // Stamped before reading: a change while it's read is caught next time.
+            let read = tokio::task::spawn_blocking(move || {
+                let stamp = files::stamp(&read_from, &path);
+                (stamp, files::read(&read_from, &path, limit))
+            })
+            .await;
             match read {
-                Ok(Ok(contents)) => Response::ok(id, &contents),
-                Ok(Err(Unreadable::Outside)) => Response::error(
+                Ok((stamp, Ok(contents))) => {
+                    watch.read(&worktree, &shown, stamp);
+                    Response::ok(id, &contents)
+                }
+                Ok((_, Err(Unreadable::Outside))) => Response::error(
                     id,
                     ErrorCode::BadRequest,
                     format!("{shown} is outside the worktree"),
                 ),
-                Ok(Err(Unreadable::Io(why))) => Response::error(id, ErrorCode::Io, why),
+                Ok((_, Err(Unreadable::Io(why)))) => Response::error(id, ErrorCode::Io, why),
                 Err(e) => Response::error(id, ErrorCode::Io, e.to_string()),
             }
         }
-        // Run apart, in `serve`, so a search never holds up other requests.
-        Call::Search { .. } => Response::error(id, ErrorCode::BadRequest, "search runs apart"),
+        // Run apart, in `serve`: a search never holds up other requests, and
+        // a watch belongs to its connection.
+        Call::Search { .. } | Call::Watch { .. } => {
+            Response::error(id, ErrorCode::BadRequest, "handled apart")
+        }
     }
 }
 

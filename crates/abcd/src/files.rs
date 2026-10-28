@@ -44,10 +44,18 @@ pub enum Unreadable {
     Io(String),
 }
 
-/// `path`, relative to `worktree`, for the viewer: its text, or that it's
-/// binary or over `limit` bytes. A path that would leave the worktree,
-/// through `..` or a link, is refused.
-pub fn read(worktree: &Path, path: &str, limit: u64) -> Result<FileContents, Unreadable> {
+/// When a file was last written, and its size: what tells abcd it changed.
+pub type Stamp = (std::time::SystemTime, u64);
+
+/// `path`'s stamp, or none if it's gone or would leave the worktree.
+pub fn stamp(worktree: &Path, path: &str) -> Option<Stamp> {
+    let file = inside(worktree, path).ok()?;
+    let meta = std::fs::metadata(file).ok()?;
+    Some((meta.modified().ok()?, meta.len()))
+}
+
+/// `path` under `worktree`, resolved, if it stays inside it.
+fn inside(worktree: &Path, path: &str) -> Result<std::path::PathBuf, Unreadable> {
     let relative = Path::new(path);
     if relative.is_absolute()
         || relative
@@ -59,9 +67,19 @@ pub fn read(worktree: &Path, path: &str, limit: u64) -> Result<FileContents, Unr
     let io = |e: std::io::Error| Unreadable::Io(e.to_string());
     let root = std::fs::canonicalize(worktree).map_err(io)?;
     let file = std::fs::canonicalize(root.join(relative)).map_err(io)?;
-    if !file.starts_with(&root) {
-        return Err(Unreadable::Outside);
+    if file.starts_with(&root) {
+        Ok(file)
+    } else {
+        Err(Unreadable::Outside)
     }
+}
+
+/// `path`, relative to `worktree`, for the viewer: its text, or that it's
+/// binary or over `limit` bytes. A path that would leave the worktree,
+/// through `..` or a link, is refused.
+pub fn read(worktree: &Path, path: &str, limit: u64) -> Result<FileContents, Unreadable> {
+    let io = |e: std::io::Error| Unreadable::Io(e.to_string());
+    let file = inside(worktree, path)?;
     let size = std::fs::metadata(&file).map_err(io)?.len();
     if size > limit {
         return Ok(FileContents::TooLarge { size, limit });
