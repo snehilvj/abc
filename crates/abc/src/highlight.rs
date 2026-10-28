@@ -32,6 +32,10 @@ const NAMED: &[(&str, &str)] = &[
     ("uv.lock", "TOML"),
 ];
 
+/// Extensions bat has no syntax for, and the nearest one it has: MDX is
+/// Markdown with JSX in it.
+const LIKE: &[(&str, &str)] = &[("mdx", "Markdown")];
+
 impl Lang {
     /// The language of a file, by its name.
     pub fn of(name: &str) -> Self {
@@ -108,6 +112,13 @@ fn syntax_for(file: &str) -> Option<&'static str> {
     }
     let set = syntaxes();
     let parts: Vec<&str> = file.split('.').collect();
+    if let Some((_, syntax)) = parts
+        .last()
+        .filter(|_| parts.len() > 1)
+        .and_then(|ext| LIKE.iter().find(|(like, _)| ext.eq_ignore_ascii_case(like)))
+    {
+        return Some(syntax);
+    }
     let compound = (parts.len() > 2).then(|| parts[parts.len() - 2..].join("."));
     let extension = (parts.len() > 1).then(|| parts[parts.len() - 1].to_string());
     [compound, extension, Some(file.to_string())]
@@ -463,6 +474,11 @@ mod tests {
             "tree-sitter's, not bat's"
         );
         assert_eq!(Lang::of("server.mjs"), Lang::JavaScript);
+        assert_eq!(
+            Lang::of("docs/intro.mdx"),
+            Lang::Syntax("Markdown"),
+            "bat has no MDX"
+        );
         assert_eq!(Lang::of("LICENSE"), Lang::Plain);
         assert_eq!(Lang::of("notes.txt"), Lang::Plain, "plain text is plain");
     }
