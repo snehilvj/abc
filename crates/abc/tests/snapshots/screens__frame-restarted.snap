@@ -4,41 +4,41 @@ expression: screen
 ---
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
-│                                      ├─ ~/code/wt/privue-platform/gst-check ┬────────────────────────────────────────┤
-│    privue-platform                  │   .github                           │ verify.ts                              │
-│    gst-check               #142   │   apps                              │ The viewer is the next screen.         │
-│       feat/gst-check      3    2  │   data                              │                                        │
-│     gst-rounding            #139   │   docs                              │                                        │
-│       fix/gst-rounding          1  │   generated                         │                                        │
-│     ledger-round            #141    │   packages                          │                                        │
-│       fix/ledger-round    1        │     integrations                    │                                        │
-│       privue-platform               │       gst                           │                                        │
-│       main                          │         client.ts                   │                                        │
-│                                      │         verify.ts                   │                                        │
-│    ecourts                          │     scoring                         │                                        │
-│     gst-lookup               #88   │     shared                          │                                        │
-│       feat/gst-lookup           4  │   .gitignore                        │                                        │
-│     ocr-retry                        │   package.json                      │                                        │
-│       feat/ocr-retry      7  local │   README.md                         │                                        │
-│       ecourts                       │   tsconfig.json                     │                                        │
-│       main                      3  │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-├──────────────────────────────────────┴──────────────────────────────────────┴────────────────────────────────────────┤
+│                                      ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
+│    privue-platform                  │   .github                           │  1  import { normalise } from "../../… │
+│    gst-check               #142   │   apps                              │  2  import type { GstClient } from ".… │
+│       feat/gst-check      3    2  │   data                              │  3                                     │
+│     gst-rounding            #139   │   docs                              │  4  export type GstInput = {           │
+│       fix/gst-rounding          1  │   generated                         │  5    gstin: string                    │
+│     ledger-round            #141    │   packages                          │  6    legalName: string                │
+│       fix/ledger-round    1        │     integrations                    │  7    state?: string                   │
+│       privue-platform               │       gst                           │  8  }                                  │
+│       main                          │         client.ts                   │  9                                     │
+│                                      │         verify.ts                   │ 10  export type Result =               │
+│    ecourts                          │     scoring                         │ 11    | { kind: "ok"; gstin: string }  │
+│     gst-lookup               #88   │     shared                          │ 12    | { kind: "mismatch"; reason: s… │
+│       feat/gst-lookup           4  │   .gitignore                        │ 13                                     │
+│     ocr-retry                        │   package.json                      │ 14  // Checks a GSTIN against the reg… │
+│       feat/ocr-retry      7  local │   README.md                         │ 15  // details the customer gave us.   │
+│       ecourts                       │   tsconfig.json                     │ 16  export async function verify(      │
+│       main                      3  │                                      │ 17    input: GstInput,                 │
+│                                      │                                      │ 18    client: GstClient,               │
+│                                      │                                      │ 19  ): Promise<Result> {               │
+│                                      │                                      │ 20    const a = normalise(input)       │
+│                                      │                                      │ 21    const record = await client.loo… │
+│                                      │                                      │ 22    if (!record) {                   │
+│                                      │                                      │ 23      return mismatch(a, "not regis… │
+│                                      │                                      │ 24    }                                │
+│                                      │                                      │ 25    if (record.legalName !== a.lega… │
+│                                      │                                      │ 26      return mismatch(a, "name diff… │
+│                                      │                                      │ 27    }                                │
+│                                      │                                      │ 28    if (a.state && record.state !==… │
+│                                      │                                      │ 29      return mismatch(a, `state is … │
+│                                      │                                      │ 30    }                                │
+│                                      │                                      │ 31    return { kind: "ok", gstin: a.g… │
+│                                      │                                      │ 32  }                                  │
+│                                      │                                      │ 33                                     │
+│                                      │                                      │ 34  function mismatch(a: GstInput, re… │
+├──────────────────────────────────────┴──────────────────────────────────────┴─────────────────────────── 1–34 of 58 ─┤
 │ j k move · enter open · gg G top/end · h l focus · space commands · ^p find · tab last worktree · ? help · q quit    │
 └   abcd restarted · build 0.1.0+3f9a2c1e ───────────────────────────────────────────────────── 2 repos · 7 worktrees ┘

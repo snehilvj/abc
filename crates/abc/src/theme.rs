@@ -36,11 +36,27 @@ pub struct Theme {
     pub pr_merged: Color,
     pub pr_closed: Color,
     pub folder: Color,
+    /// Colours for highlighted code, by tree-sitter highlight kind.
+    pub syntax: Syntax,
     /// Dark or light, for colours that come in two sets (file icons).
     pub dark: bool,
     /// Blank cells between an icon and its label. Terminals that draw Nerd Font
     /// glyphs into the next cell need 2; the rest look right with 1.
     pub icon_gap: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Syntax {
+    pub keyword: Color,
+    pub string: Color,
+    pub comment: Color,
+    pub r#type: Color,
+    pub function: Color,
+    /// Numbers, booleans and other constants.
+    pub constant: Color,
+    pub property: Color,
+    /// Punctuation and operators.
+    pub punctuation: Color,
 }
 
 const fn rgb(hex: u32) -> Color {
@@ -67,6 +83,16 @@ impl Theme {
             pr_merged: rgb(0xb18cf0),
             pr_closed: rgb(0xec716b),
             folder: rgb(0x6ea9f0),
+            syntax: Syntax {
+                keyword: rgb(0xc788df),
+                string: rgb(0x9ccc75),
+                comment: rgb(0x64707b),
+                r#type: rgb(0xe6c27a),
+                function: rgb(0x6ea9f0),
+                constant: rgb(0xf0a35e),
+                property: rgb(0xd7dde3),
+                punctuation: rgb(0x8a949e),
+            },
             dark: true,
             icon_gap: 2,
         }
@@ -91,6 +117,16 @@ impl Theme {
             pr_merged: rgb(0x7546c4),
             pr_closed: rgb(0xc0362c),
             folder: rgb(0x1f63c4),
+            syntax: Syntax {
+                keyword: rgb(0x8a3da6),
+                string: rgb(0x2a7531),
+                comment: rgb(0x8a939b),
+                r#type: rgb(0x8a5a00),
+                function: rgb(0x1f63c4),
+                constant: rgb(0xb5520b),
+                property: rgb(0x1f2429),
+                punctuation: rgb(0x6b757e),
+            },
             dark: false,
             icon_gap: 2,
         }
@@ -115,6 +151,16 @@ impl Theme {
             pr_merged: Color::Magenta,
             pr_closed: Color::Red,
             folder: Color::Blue,
+            syntax: Syntax {
+                keyword: Color::Magenta,
+                string: Color::Green,
+                comment: Color::DarkGray,
+                r#type: Color::Yellow,
+                function: Color::Blue,
+                constant: Color::Cyan,
+                property: Color::Reset,
+                punctuation: Color::DarkGray,
+            },
             dark: true,
             icon_gap: 2,
         }

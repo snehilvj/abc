@@ -304,3 +304,179 @@ pub fn listings(repos: &[Repo]) -> std::collections::HashMap<PathBuf, crate::exp
     }
     listings
 }
+
+const VERIFY_TS: &str = r#"import { normalise } from "../../shared/text"
+import type { GstClient } from "./client"
+
+export type GstInput = {
+  gstin: string
+  legalName: string
+  state?: string
+}
+
+export type Result =
+  | { kind: "ok"; gstin: string }
+  | { kind: "mismatch"; reason: string }
+
+// Checks a GSTIN against the registry and the
+// details the customer gave us.
+export async function verify(
+  input: GstInput,
+  client: GstClient,
+): Promise<Result> {
+  const a = normalise(input)
+  const record = await client.lookup(a.gstin)
+  if (!record) {
+    return mismatch(a, "not registered")
+  }
+  if (record.legalName !== a.legalName) {
+    return mismatch(a, "name differs")
+  }
+  if (a.state && record.state !== a.state) {
+    return mismatch(a, `state is ${record.state}`)
+  }
+  return { kind: "ok", gstin: a.gstin }
+}
+
+function mismatch(a: GstInput, reason: string): Result {
+  return {
+    kind: "mismatch",
+    reason: `${a.gstin}: ${reason}`,
+  }
+}
+
+const GSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
+
+export function isGstin(value: string): boolean {
+  return GSTIN.test(value.trim().toUpperCase())
+}
+
+export const RETRIES = 3
+export const TIMEOUT_MS = 5_000
+
+export function describe(result: Result): string {
+  switch (result.kind) {
+    case "ok":
+      return `verified ${result.gstin}`
+    case "mismatch":
+      return result.reason
+  }
+}
+"#;
+
+const CLIENT_TS: &str = r#"export type Record = { gstin: string; legalName: string; state: string }
+
+export interface GstClient {
+  lookup(gstin: string): Promise<Record | undefined>
+}
+
+export class HttpGstClient implements GstClient {
+  constructor(private readonly base: string) {}
+
+  async lookup(gstin: string): Promise<Record | undefined> {
+    const response = await fetch(`${this.base}/gstin/${gstin}`)
+    if (response.status === 404) return undefined
+    return (await response.json()) as Record
+  }
+}
+"#;
+
+const TEXT_TS: &str = r#"export function normalise<T extends { gstin: string; legalName: string }>(input: T): T {
+  return { ...input, gstin: input.gstin.trim().toUpperCase(), legalName: input.legalName.trim() }
+}
+"#;
+
+const MAIN_TSX: &str = r#"import { createRoot } from "react-dom/client"
+import { Home } from "./pages/home"
+
+createRoot(document.getElementById("root")!).render(<Home title="GST checks" />)
+"#;
+
+const VERIFY_GST_TSX: &str = r#"import { useState } from "react"
+import { verify } from "@privue/integrations/gst/verify"
+
+export function VerifyGst({ client }: { client: GstClient }) {
+  const [gstin, setGstin] = useState("")
+  return (
+    <form onSubmit={() => verify({ gstin, legalName: "" }, client)}>
+      <input value={gstin} onChange={(e) => setGstin(e.target.value)} />
+      <button type="submit">Verify</button>
+    </form>
+  )
+}
+"#;
+
+const SCORE_PY: &str = r#""""Scores a counterparty from its verification results."""
+
+from dataclasses import dataclass
+
+WEIGHTS = {"gst": 0.4, "bank": 0.35, "litigation": 0.25}
+
+
+@dataclass
+class Signal:
+    name: str
+    passed: bool
+
+
+def score(signals: list[Signal]) -> float:
+    # Each passed signal adds its weight; unknown signals count for nothing.
+    total = 0.0
+    for signal in signals:
+        if signal.passed:
+            total += WEIGHTS.get(signal.name, 0)
+    return round(total * 100, 1)
+"#;
+
+const README_MD: &str = "# privue-platform\n\nMonorepo for the platform services.\n\n## Layout\n\n- `packages/`: shared libraries\n- `apps/`: deployable apps\n";
+
+/// A file's contents, as abcd would send them.
+pub fn read(path: &str) -> Result<abc_core::model::FileContents, String> {
+    use abc_core::model::FileContents;
+    let text = |t: &str| {
+        Ok(FileContents::Text {
+            text: t.to_string(),
+        })
+    };
+    match path {
+        "packages/integrations/gst/verify.ts" => text(VERIFY_TS),
+        "packages/integrations/gst/client.ts" => text(CLIENT_TS),
+        "packages/shared/text.ts" => text(TEXT_TS),
+        "apps/web/src/main.tsx" => text(MAIN_TSX),
+        "apps/web/src/pages/verify-gst.tsx" | "apps/web/src/pages/home.tsx" => text(VERIFY_GST_TSX),
+        "packages/scoring/score.py" | "packages/scoring/verifier.py" => text(SCORE_PY),
+        "README.md" | "docs/gst.md" => text(README_MD),
+        "generated/rows.rs" => Ok(FileContents::Text { text: rows() }),
+        "docs/logo.png" => Ok(FileContents::Binary { size: 24_123 }),
+        "data/dump.sql" => Ok(FileContents::TooLarge {
+            size: 12_400_000,
+            limit: 5_000_000,
+        }),
+        _ if path.ends_with(".py") => text(SCORE_PY),
+        _ => text("# fake file\n"),
+    }
+}
+
+/// A generated 10,000-line Rust file, for scrolling.
+pub fn rows() -> String {
+    let mut out = String::from("// Generated: one constant per row.\n");
+    for n in 2..=10_000 {
+        out.push_str(&format!("pub const ROW_{n}: u32 = {n};\n"));
+    }
+    out.pop();
+    out
+}
+
+/// The current worktree's viewer, with `path` open and highlighted.
+pub fn viewer(path: &str) -> crate::viewer::Viewer {
+    use crate::viewer::{Document, Viewer};
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let document = match read(path) {
+        Ok(contents) => match Document::from_contents(contents, name) {
+            Document::Text(text) => Document::Text(text.highlighted()),
+            other => other,
+        },
+        Err(why) => Document::Failed(why),
+    };
+    Viewer::new(path.split('/').map(String::from).collect(), document)
+}

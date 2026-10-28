@@ -4,6 +4,7 @@ pub mod catalog;
 pub mod explorer;
 pub mod label;
 pub mod sidebar;
+pub mod viewer;
 
 use abc_core::model::{Checks, Head, PrState, Review};
 use ratatui::Frame;
@@ -13,7 +14,6 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 use crate::app::{App, Connection, Entry, Focus, StatusKind};
-use crate::explorer::Listing;
 use crate::icons;
 use crate::keys::{self, Action, Context};
 use crate::layout::{self, Columns};
@@ -439,30 +439,33 @@ fn centred(buf: &mut Buffer, g: &Geometry, lines: &[NoticeLine], theme: &Theme) 
     }
 }
 
-/// The explorer, and the viewer's pane, which arrives with its own screen.
+/// The explorer and the viewer, with the viewer's header and line range.
 fn panes(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     let (y0, y1) = g.content_rows();
-    let listing = app.current_listing();
-    let area = Rect::new(g.d1 + 1, y0, g.cols.explorer, y1 - y0 + 1);
-    explorer::draw(buf, area, listing, app.focus == Focus::Explorer, theme);
-    let open = match listing {
-        Some(Listing::Ready(e)) => e.open.as_ref().and_then(|p| p.last()),
-        _ => None,
-    };
-    let width = (g.right - g.d2 - 3) as usize;
-    match open {
-        Some(name) => {
-            buf.set_stringn(g.d2 + 2, y0, name, width, theme.text());
-            buf.set_stringn(
-                g.d2 + 2,
-                y0 + 1,
-                "The viewer is the next screen.",
-                width,
+    let height = y1 - y0 + 1;
+    let explorer_area = Rect::new(g.d1 + 1, y0, g.cols.explorer, height);
+    explorer::draw(
+        buf,
+        explorer_area,
+        app.current_listing(),
+        app.focus == Focus::Explorer,
+        theme,
+    );
+    let viewer = app.current_viewer();
+    let viewer_area = Rect::new(g.d2 + 1, y0, g.cols.viewer, height);
+    viewer::draw(buf, viewer_area, viewer, theme);
+    if let Some(v) = viewer {
+        let width = g.cols.viewer.saturating_sub(3);
+        let header = viewer::header(v, width as usize, app.focus == Focus::Viewer, theme);
+        buf.set_line(g.d2 + 2, g.header_row(), &header, width);
+        if let Some(range) = viewer::range(v) {
+            let range = format!(" {range} ");
+            buf.set_string(
+                g.right - 1 - range.chars().count() as u16,
+                g.bottom - 2,
+                range,
                 theme.dim(),
             );
-        }
-        None => {
-            buf.set_stringn(g.d2 + 2, y0, "No file open.", width, theme.dim());
         }
     }
 }

@@ -2,6 +2,7 @@
 //! server. Each screen has named states; `[` and `]` step through them.
 
 use std::io::stdout;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
@@ -11,16 +12,19 @@ use ratatui::crossterm::terminal::SetTitle;
 use ratatui::layout::Rect;
 use ratatui::widgets::Paragraph;
 
-use crate::app::{App, Connection, Entry, Focus, SidebarStyle, Status, StatusKind};
+use crate::app::{App, Cmd, Connection, Entry, Focus, Msg, SidebarStyle, Status, StatusKind};
 use crate::explorer::{Explorer, Listing};
 use crate::fake;
+use crate::highlight;
 use crate::theme::{Theme, ThemeChoice};
 use crate::ui;
+use crate::viewer::{Document, Viewer};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Screen {
     Frame,
     Explorer,
+    Viewer,
     /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
     Icons,
     /// Panics on the first key, to check the terminal comes back clean.
@@ -62,6 +66,7 @@ pub fn presets(screen: Screen) -> Vec<Preset> {
     match screen {
         Screen::Frame => frame(),
         Screen::Explorer => explorer(),
+        Screen::Viewer => viewer(),
         Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
@@ -73,6 +78,8 @@ fn connected(repos: Vec<abc_core::model::Repo>) -> App {
     app.repos = repos;
     app.connection = Connection::Connected;
     app.open(&fake::current());
+    let verify = "packages/integrations/gst/verify.ts";
+    app.viewers.insert(fake::current(), fake::viewer(verify));
     app
 }
 
@@ -191,11 +198,105 @@ pub fn explorer() -> Vec<Preset> {
     ]
 }
 
+/// The viewer's states, each on the populated frame with the viewer focused.
+pub fn viewer() -> Vec<Preset> {
+    let open = |path: &str, extra: &[&str]| {
+        let mut app = connected(fake::repos());
+        app.focus = Focus::Viewer;
+        let segments: Vec<String> = path.split('/').map(String::from).collect();
+        if let Some(Listing::Ready(explorer)) = app.listings.get_mut(&fake::current()) {
+            for folder in extra {
+                explorer
+                    .state
+                    .borrow_mut()
+                    .open(folder.split('/').map(String::from).collect());
+            }
+            explorer.reveal(&segments);
+        }
+        app.viewers.insert(fake::current(), fake::viewer(path));
+        app
+    };
+    let verify = "packages/integrations/gst/verify.ts";
+    let with_document = |document: Document| {
+        let mut app = open(verify, &[]);
+        let path = verify.split('/').map(String::from).collect();
+        app.viewers
+            .insert(fake::current(), Viewer::new(path, document));
+        app
+    };
+    let mut pending = open(verify, &[]);
+    if let Some(Viewer {
+        document: Document::Text(text),
+        ..
+    }) = pending.viewers.get_mut(&fake::current())
+    {
+        text.spans = None;
+    }
+    let mut none = connected(fake::repos());
+    none.viewers.clear();
+    if let Some(Listing::Ready(explorer)) = none.listings.get_mut(&fake::current()) {
+        explorer.open = None;
+    }
+    let mut large = open("generated/rows.rs", &[]);
+    if let Some(viewer) = large.viewers.get_mut(&fake::current()) {
+        viewer.scroll = usize::MAX;
+    }
+    vec![
+        preset("highlighted", open(verify, &[])),
+        preset("pending", pending),
+        preset("none", none),
+        preset("loading", with_document(Document::Loading)),
+        preset("plain", open("README.md", &[])),
+        preset("binary", open("docs/logo.png", &[])),
+        preset("too-large", open("data/dump.sql", &[])),
+        preset(
+            "error",
+            with_document(Document::Failed("permission denied".into())),
+        ),
+        preset("large", large),
+    ]
+}
+
+/// Carries out the app's commands from fake data, as abcd will: files are read
+/// at once; highlighting runs on a thread and comes back as a message.
+fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
+    while !app.outbox.is_empty() {
+        for cmd in std::mem::take(&mut app.outbox) {
+            match cmd {
+                Cmd::ReadFile { worktree, path } => {
+                    let contents = fake::read(&path);
+                    app.apply(Msg::FileRead {
+                        worktree,
+                        path,
+                        contents,
+                    });
+                }
+                Cmd::Highlight {
+                    worktree,
+                    path,
+                    source,
+                    lang,
+                } => {
+                    let tx = tx.clone();
+                    std::thread::spawn(move || {
+                        let spans = highlight::highlight(&source, lang);
+                        let _ = tx.send(Msg::Highlighted {
+                            worktree,
+                            path,
+                            spans,
+                        });
+                    });
+                }
+            }
+        }
+    }
+}
+
 pub fn run(args: Args) -> Result<()> {
     match args.screen {
         Screen::Panic => return run_panic(),
         Screen::Icons => return run_catalog(args.state.as_deref(), Theme::resolve(args.theme)),
-        Screen::Frame | Screen::Explorer => {}
+        Screen::Frame | Screen::Explorer | Screen::Viewer => {}
     }
     let presets = presets(args.screen);
     let names = || {
@@ -216,6 +317,7 @@ pub fn run(args: Args) -> Result<()> {
     let theme = Theme::resolve(args.theme);
     let mut terminal = ratatui::try_init().context("setting up the terminal")?;
     let result = (|| -> Result<()> {
+        let (tx, rx) = mpsc::channel();
         let mut app = presets[index].app.clone();
         set_title(args.screen, presets[index].name);
         loop {
@@ -227,10 +329,21 @@ pub fn run(args: Args) -> Result<()> {
                 };
                 ui::draw(frame, area, &app, &theme);
             })?;
-            // Handle everything already typed before drawing again, so held keys never lag.
-            let mut wait = true;
-            while wait || event::poll(Duration::ZERO)? {
-                wait = false;
+            // Wait for a key or a finished job; then handle everything waiting
+            // before drawing again, so held keys never lag.
+            loop {
+                if let Ok(msg) = rx.try_recv() {
+                    app.apply(msg);
+                    break;
+                }
+                if event::poll(Duration::from_millis(30))? {
+                    break;
+                }
+            }
+            while let Ok(msg) = rx.try_recv() {
+                app.apply(msg);
+            }
+            while event::poll(Duration::ZERO)? {
                 let Event::Key(key) = event::read()? else {
                     continue;
                 };
@@ -242,6 +355,7 @@ pub fn run(args: Args) -> Result<()> {
                     KeyCode::Char('[') => presets.len() - 1,
                     _ => {
                         app.handle_key(key);
+                        serve(&mut app, &tx);
                         continue;
                     }
                 };

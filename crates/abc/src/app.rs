@@ -7,9 +7,41 @@ use abc_core::model::{Repo, Worktree};
 use crokey::KeyCombination;
 use ratatui::crossterm::event::{KeyEvent, KeyEventKind};
 
-use crate::explorer::Listing;
+use crate::explorer::{Listing, NodePath};
+use crate::highlight::{self, Lang};
 use crate::keys::{self, Action, Context, Feed, Keymap};
 use crate::layout::Widths;
+use crate::viewer::{Document, Viewer};
+
+/// Work the app asks for: abcd reads files; highlighting runs off the UI thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Cmd {
+    ReadFile {
+        worktree: PathBuf,
+        path: String,
+    },
+    Highlight {
+        worktree: PathBuf,
+        path: String,
+        source: String,
+        lang: Lang,
+    },
+}
+
+/// Answers to commands.
+#[derive(Debug, Clone)]
+pub enum Msg {
+    FileRead {
+        worktree: PathBuf,
+        path: String,
+        contents: Result<abc_core::model::FileContents, String>,
+    },
+    Highlighted {
+        worktree: PathBuf,
+        path: String,
+        spans: Option<Vec<Vec<highlight::Span>>>,
+    },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Focus {
@@ -82,6 +114,10 @@ pub struct App {
     pub repos: Vec<Repo>,
     /// Each worktree's files and explorer, kept while abc runs.
     pub listings: HashMap<PathBuf, Listing>,
+    /// Each worktree's open file in the viewer.
+    pub viewers: HashMap<PathBuf, Viewer>,
+    /// Commands waiting to be carried out.
+    pub outbox: Vec<Cmd>,
     pub current: Option<PathBuf>,
     pub last: Option<PathBuf>,
     pub focus: Focus,
@@ -109,6 +145,8 @@ impl App {
             profile: profile.into(),
             repos: Vec::new(),
             listings: HashMap::new(),
+            viewers: HashMap::new(),
+            outbox: Vec::new(),
             current: None,
             last: None,
             focus: Focus::Sidebar,
@@ -219,6 +257,18 @@ impl App {
             {
                 self.explorer_action(action)
             }
+            Action::Down
+            | Action::Up
+            | Action::HalfPageDown
+            | Action::HalfPageUp
+            | Action::PageDown
+            | Action::PageUp
+            | Action::First
+            | Action::Last
+                if self.context() == Context::Viewer =>
+            {
+                self.viewer_action(action)
+            }
             // The switcher, dialogs, help, explorer and viewer arrive with their screens.
             _ => {}
         }
@@ -240,8 +290,96 @@ impl App {
             Action::Up => explorer.up(),
             Action::First => explorer.first(),
             Action::Last => explorer.last(),
-            Action::Open => explorer.activate(),
+            Action::Open => {
+                if let Some(path) = explorer.activate() {
+                    self.open_file(path);
+                }
+            }
             _ => {}
+        }
+    }
+
+    pub fn current_viewer(&self) -> Option<&Viewer> {
+        self.current.as_ref().and_then(|p| self.viewers.get(p))
+    }
+
+    fn viewer_action(&mut self, action: Action) {
+        let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) else {
+            return;
+        };
+        let page = viewer.page();
+        match action {
+            Action::Down => viewer.scroll_by(1),
+            Action::Up => viewer.scroll_by(-1),
+            Action::HalfPageDown => viewer.scroll_by(page / 2),
+            Action::HalfPageUp => viewer.scroll_by(-page / 2),
+            Action::PageDown => viewer.scroll_by(page),
+            Action::PageUp => viewer.scroll_by(-page),
+            Action::First => viewer.to_top(),
+            Action::Last => viewer.to_end(),
+            _ => {}
+        }
+    }
+
+    /// Opens `path` in the current worktree's viewer and asks abcd for it.
+    fn open_file(&mut self, path: NodePath) {
+        let Some(worktree) = self.current.clone() else {
+            return;
+        };
+        let file = path.join("/");
+        self.viewers
+            .insert(worktree.clone(), Viewer::new(path, Document::Loading));
+        self.outbox.push(Cmd::ReadFile {
+            worktree,
+            path: file,
+        });
+    }
+
+    /// Takes in an answer to a command. Answers for a file no longer open are dropped.
+    pub fn apply(&mut self, msg: Msg) {
+        match msg {
+            Msg::FileRead {
+                worktree,
+                path,
+                contents,
+            } => {
+                let Some(viewer) = self
+                    .viewers
+                    .get_mut(&worktree)
+                    .filter(|v| v.path.join("/") == path)
+                else {
+                    return;
+                };
+                viewer.document = match contents {
+                    Ok(contents) => Document::from_contents(contents, viewer.name()),
+                    Err(why) => Document::Failed(why),
+                };
+                if let Document::Text(text) = &viewer.document
+                    && text.lang != Lang::Plain
+                {
+                    let (source, lang) = (text.source(), text.lang);
+                    self.outbox.push(Cmd::Highlight {
+                        worktree,
+                        path,
+                        source,
+                        lang,
+                    });
+                }
+            }
+            Msg::Highlighted {
+                worktree,
+                path,
+                spans,
+            } => {
+                if let Some(viewer) = self
+                    .viewers
+                    .get_mut(&worktree)
+                    .filter(|v| v.path.join("/") == path)
+                    && let Document::Text(text) = &mut viewer.document
+                {
+                    text.spans = spans;
+                }
+            }
         }
     }
 
@@ -318,6 +456,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::fake;
+    use crate::viewer::Document;
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
     fn app() -> App {
@@ -330,13 +469,17 @@ mod tests {
 
     fn press(app: &mut App, keys: &str) {
         for k in keys.split(' ') {
+            let (k, modifiers) = match k.strip_prefix("ctrl-") {
+                Some(k) => (k, KeyModifiers::CONTROL),
+                None => (k, KeyModifiers::NONE),
+            };
             let code = match k {
                 "enter" => KeyCode::Enter,
                 "tab" => KeyCode::Tab,
                 "space" => KeyCode::Char(' '),
                 _ => KeyCode::Char(k.chars().next().unwrap()),
             };
-            app.handle_key(KeyEvent::new(code, KeyModifiers::NONE));
+            app.handle_key(KeyEvent::new(code, modifiers));
         }
     }
 
@@ -481,6 +624,89 @@ mod tests {
         );
         press_drawn(&mut app, "tab");
         assert_eq!(selected(&app), "packages/integrations/gst/client.ts");
+    }
+
+    #[test]
+    fn opening_a_file_reads_it_then_highlights_it() {
+        let mut app = with_files();
+        let worktree = fake::current();
+        let path = "packages/integrations/gst/client.ts".to_string();
+        press_drawn(&mut app, "k enter");
+        assert_eq!(
+            app.outbox,
+            [Cmd::ReadFile {
+                worktree: worktree.clone(),
+                path: path.clone()
+            }]
+        );
+        assert!(matches!(
+            app.current_viewer().unwrap().document,
+            Document::Loading
+        ));
+        app.outbox.clear();
+
+        app.apply(Msg::FileRead {
+            worktree: worktree.clone(),
+            path: path.clone(),
+            contents: fake::read(&path),
+        });
+        let Some(Cmd::Highlight { source, lang, .. }) = app.outbox.pop() else {
+            panic!("no highlight asked for")
+        };
+        assert_eq!(lang, Lang::TypeScript);
+        let Document::Text(text) = &app.current_viewer().unwrap().document else {
+            panic!("not text")
+        };
+        assert!(
+            text.spans.is_none(),
+            "uncoloured until highlighting finishes"
+        );
+
+        let spans = highlight::highlight(&source, lang);
+        app.apply(Msg::Highlighted {
+            worktree,
+            path,
+            spans,
+        });
+        let Document::Text(text) = &app.current_viewer().unwrap().document else {
+            panic!("not text")
+        };
+        assert!(text.spans.is_some());
+    }
+
+    #[test]
+    fn an_answer_for_a_file_no_longer_open_is_dropped() {
+        let mut app = with_files();
+        // Open client.ts, then verify.ts before client.ts arrives.
+        press_drawn(&mut app, "k enter j enter");
+        let worktree = fake::current();
+        let stale = "packages/integrations/gst/client.ts".to_string();
+        app.apply(Msg::FileRead {
+            worktree,
+            path: stale.clone(),
+            contents: fake::read(&stale),
+        });
+        let viewer = app.current_viewer().unwrap();
+        assert_ne!(viewer.path.join("/"), stale);
+        assert!(matches!(viewer.document, Document::Loading));
+    }
+
+    #[test]
+    fn viewer_keys_scroll_within_the_file() {
+        let mut app = with_files();
+        app.viewers
+            .insert(fake::current(), fake::viewer("generated/rows.rs"));
+        app.focus = Focus::Viewer;
+        let scroll = |app: &App| app.current_viewer().unwrap().scroll;
+        press_drawn(&mut app, "G");
+        let end = scroll(&app);
+        assert_eq!(end, 10_000 - app.current_viewer().unwrap().height.get());
+        press_drawn(&mut app, "j");
+        assert_eq!(scroll(&app), end, "no scrolling past the last line");
+        press_drawn(&mut app, "g g ctrl-d");
+        assert_eq!(scroll(&app), app.current_viewer().unwrap().height.get() / 2);
+        press_drawn(&mut app, "ctrl-u k");
+        assert_eq!(scroll(&app), 0);
     }
 
     #[test]

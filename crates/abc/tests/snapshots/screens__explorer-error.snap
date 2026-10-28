@@ -4,41 +4,41 @@ expression: screen
 ---
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
-│                                      ├─ ~/code/wt/privue-platform/gst-check ┬────────────────────────────────────────┤
-│    privue-platform                  │   Can't list files                  │ No file open.                          │
-│    gst-check               #142   │                                      │                                        │
-│       feat/gst-check      3    2  │ permission denied                    │                                        │
-│     gst-rounding            #139   │                                      │                                        │
-│       fix/gst-rounding          1  │                                      │                                        │
-│     ledger-round            #141    │                                      │                                        │
-│       fix/ledger-round    1        │                                      │                                        │
-│       privue-platform               │                                      │                                        │
-│       main                          │                                      │                                        │
-│                                      │                                      │                                        │
-│    ecourts                          │                                      │                                        │
-│     gst-lookup               #88   │                                      │                                        │
-│       feat/gst-lookup           4  │                                      │                                        │
-│     ocr-retry                        │                                      │                                        │
-│       feat/ocr-retry      7  local │                                      │                                        │
-│       ecourts                       │                                      │                                        │
-│       main                      3  │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-├──────────────────────────────────────┴──────────────────────────────────────┴────────────────────────────────────────┤
+│                                      ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
+│    privue-platform                  │   Can't list files                  │  1  import { normalise } from "../../… │
+│    gst-check               #142   │                                      │  2  import type { GstClient } from ".… │
+│       feat/gst-check      3    2  │ permission denied                    │  3                                     │
+│     gst-rounding            #139   │                                      │  4  export type GstInput = {           │
+│       fix/gst-rounding          1  │                                      │  5    gstin: string                    │
+│     ledger-round            #141    │                                      │  6    legalName: string                │
+│       fix/ledger-round    1        │                                      │  7    state?: string                   │
+│       privue-platform               │                                      │  8  }                                  │
+│       main                          │                                      │  9                                     │
+│                                      │                                      │ 10  export type Result =               │
+│    ecourts                          │                                      │ 11    | { kind: "ok"; gstin: string }  │
+│     gst-lookup               #88   │                                      │ 12    | { kind: "mismatch"; reason: s… │
+│       feat/gst-lookup           4  │                                      │ 13                                     │
+│     ocr-retry                        │                                      │ 14  // Checks a GSTIN against the reg… │
+│       feat/ocr-retry      7  local │                                      │ 15  // details the customer gave us.   │
+│       ecourts                       │                                      │ 16  export async function verify(      │
+│       main                      3  │                                      │ 17    input: GstInput,                 │
+│                                      │                                      │ 18    client: GstClient,               │
+│                                      │                                      │ 19  ): Promise<Result> {               │
+│                                      │                                      │ 20    const a = normalise(input)       │
+│                                      │                                      │ 21    const record = await client.loo… │
+│                                      │                                      │ 22    if (!record) {                   │
+│                                      │                                      │ 23      return mismatch(a, "not regis… │
+│                                      │                                      │ 24    }                                │
+│                                      │                                      │ 25    if (record.legalName !== a.lega… │
+│                                      │                                      │ 26      return mismatch(a, "name diff… │
+│                                      │                                      │ 27    }                                │
+│                                      │                                      │ 28    if (a.state && record.state !==… │
+│                                      │                                      │ 29      return mismatch(a, `state is … │
+│                                      │                                      │ 30    }                                │
+│                                      │                                      │ 31    return { kind: "ok", gstin: a.g… │
+│                                      │                                      │ 32  }                                  │
+│                                      │                                      │ 33                                     │
+│                                      │                                      │ 34  function mismatch(a: GstInput, re… │
+├──────────────────────────────────────┴──────────────────────────────────────┴─────────────────────────── 1–34 of 58 ─┤
 │ j k move · enter open · gg G top/end · h l focus · space commands · ^p find · tab last worktree · ? help · q quit    │
 └─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘

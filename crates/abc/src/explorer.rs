@@ -148,16 +148,18 @@ impl Explorer {
         self.state.borrow_mut().select_last();
     }
 
-    /// A folder opens or closes; a file opens in the viewer.
-    pub fn activate(&mut self) {
+    /// A folder opens or closes; a file opens in the viewer, and is returned.
+    pub fn activate(&mut self) -> Option<NodePath> {
         let selected = self.selected();
         if selected.is_empty() {
-            return;
+            return None;
         }
         if self.is_folder(&selected) {
             self.state.borrow_mut().toggle_selected();
+            None
         } else {
-            self.open = Some(selected);
+            self.open = Some(selected.clone());
+            Some(selected)
         }
     }
 }

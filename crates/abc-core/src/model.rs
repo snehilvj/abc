@@ -108,3 +108,21 @@ pub enum Review {
     ChangesRequested,
     Required,
 }
+
+/// A file's contents as abcd sends them to the viewer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FileContents {
+    Text {
+        text: String,
+    },
+    /// A NUL byte in the first 8 KB.
+    Binary {
+        size: u64,
+    },
+    /// Larger than `viewer.max_file_size_mb`; not sent.
+    TooLarge {
+        size: u64,
+        limit: u64,
+    },
+}

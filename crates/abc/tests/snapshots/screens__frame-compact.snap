@@ -4,41 +4,41 @@ expression: screen
 ---
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
-│                                      ├─ ~/code/wt/privue-platform/gst-check ┬────────────────────────────────────────┤
-│    privue-platform                  │   .github                           │ verify.ts                              │
-│    gst-che…   3    2     #142   │   apps                              │ The viewer is the next screen.         │
-│     gst-rou…         1     #139   │   data                              │                                        │
-│     ledger-…   1           #141    │   docs                              │                                        │
-│       priv…                         │   generated                         │                                        │
-│                                      │   packages                          │                                        │
-│    ecourts                          │     integrations                    │                                        │
-│     gst-loo…         4      #88   │       gst                           │                                        │
-│     ocr-ret…   7  local             │         client.ts                   │                                        │
-│       ecou…         3              │         verify.ts                   │                                        │
-│                                      │     scoring                         │                                        │
-│                                      │     shared                          │                                        │
-│                                      │   .gitignore                        │                                        │
-│                                      │   package.json                      │                                        │
-│                                      │   README.md                         │                                        │
-│                                      │   tsconfig.json                     │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-│                                      │                                      │                                        │
-├──────────────────────────────────────┴──────────────────────────────────────┴────────────────────────────────────────┤
+│                                      ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
+│    privue-platform                  │   .github                           │  1  import { normalise } from "../../… │
+│    gst-che…   3    2     #142   │   apps                              │  2  import type { GstClient } from ".… │
+│     gst-rou…         1     #139   │   data                              │  3                                     │
+│     ledger-…   1           #141    │   docs                              │  4  export type GstInput = {           │
+│       priv…                         │   generated                         │  5    gstin: string                    │
+│                                      │   packages                          │  6    legalName: string                │
+│    ecourts                          │     integrations                    │  7    state?: string                   │
+│     gst-loo…         4      #88   │       gst                           │  8  }                                  │
+│     ocr-ret…   7  local             │         client.ts                   │  9                                     │
+│       ecou…         3              │         verify.ts                   │ 10  export type Result =               │
+│                                      │     scoring                         │ 11    | { kind: "ok"; gstin: string }  │
+│                                      │     shared                          │ 12    | { kind: "mismatch"; reason: s… │
+│                                      │   .gitignore                        │ 13                                     │
+│                                      │   package.json                      │ 14  // Checks a GSTIN against the reg… │
+│                                      │   README.md                         │ 15  // details the customer gave us.   │
+│                                      │   tsconfig.json                     │ 16  export async function verify(      │
+│                                      │                                      │ 17    input: GstInput,                 │
+│                                      │                                      │ 18    client: GstClient,               │
+│                                      │                                      │ 19  ): Promise<Result> {               │
+│                                      │                                      │ 20    const a = normalise(input)       │
+│                                      │                                      │ 21    const record = await client.loo… │
+│                                      │                                      │ 22    if (!record) {                   │
+│                                      │                                      │ 23      return mismatch(a, "not regis… │
+│                                      │                                      │ 24    }                                │
+│                                      │                                      │ 25    if (record.legalName !== a.lega… │
+│                                      │                                      │ 26      return mismatch(a, "name diff… │
+│                                      │                                      │ 27    }                                │
+│                                      │                                      │ 28    if (a.state && record.state !==… │
+│                                      │                                      │ 29      return mismatch(a, `state is … │
+│                                      │                                      │ 30    }                                │
+│                                      │                                      │ 31    return { kind: "ok", gstin: a.g… │
+│                                      │                                      │ 32  }                                  │
+│                                      │                                      │ 33                                     │
+│                                      │                                      │ 34  function mismatch(a: GstInput, re… │
+├──────────────────────────────────────┴──────────────────────────────────────┴─────────────────────────── 1–34 of 58 ─┤
 │ j k move · enter open · gg G top/end · h l focus · space commands · ^p find · tab last worktree · ? help · q quit    │
 └─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘
