@@ -39,5 +39,10 @@ tree-sitter-typescript = "0.23"
 tui-input = "0.15"
 tui-tree-widget = "0.24"
 
+# Release builds, as published: smaller and a little faster.
+[profile.release]
+lto = "thin"
+strip = true
+
 [workspace.lints.rust]
 unsafe_code = "forbid"
