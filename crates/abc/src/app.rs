@@ -109,8 +109,8 @@ impl App {
             focus: Focus::Sidebar,
             sidebar_cursor: 0,
             sidebar_style: SidebarStyle::default(),
-            repo_gap: 2,
-            worktree_gap: 1,
+            repo_gap: 1,
+            worktree_gap: 0,
             widths: Widths::default(),
             connection: Connection::Starting,
             status: None,
@@ -198,9 +198,15 @@ impl App {
             Action::Up if self.focus == Focus::Sidebar || self.current.is_none() => {
                 self.move_cursor(-1)
             }
-            Action::First if self.context() == Context::Sidebar => self.sidebar_cursor = 0,
+            Action::First if self.context() == Context::Sidebar => {
+                if let Some(i) = self.selectable().next() {
+                    self.sidebar_cursor = i;
+                }
+            }
             Action::Last if self.context() == Context::Sidebar => {
-                self.sidebar_cursor = self.entries().len().saturating_sub(1);
+                if let Some(i) = self.selectable().last() {
+                    self.sidebar_cursor = i;
+                }
             }
             Action::Open if self.context() == Context::Sidebar => self.open_at_cursor(),
             // The switcher, dialogs, help, explorer and viewer arrive with their screens.
@@ -217,10 +223,30 @@ impl App {
         self.focus = order[(i + step).clamp(0, 2) as usize];
     }
 
+    /// Indexes of the sidebar rows the cursor can rest on: worktrees, and repos
+    /// with nothing under them (a missing repo, say), so they can still be removed.
+    fn selectable(&self) -> impl Iterator<Item = usize> + use<> {
+        let entries = self.entries();
+        let has_worktrees: Vec<bool> = self
+            .repos
+            .iter()
+            .map(|r| !r.worktrees().is_empty())
+            .collect();
+        (0..entries.len()).filter(move |i| match entries[*i] {
+            Entry::Worktree(..) => true,
+            Entry::Repo(r) => !has_worktrees[r],
+        })
+    }
+
     fn move_cursor(&mut self, step: i32) {
-        let len = self.entries().len() as i32;
-        if len > 0 {
-            self.sidebar_cursor = (self.sidebar_cursor as i32 + step).clamp(0, len - 1) as usize;
+        let cursor = self.sidebar_cursor;
+        let next = if step > 0 {
+            self.selectable().find(|i| *i > cursor)
+        } else {
+            self.selectable().filter(|i| *i < cursor).last()
+        };
+        if let Some(i) = next {
+            self.sidebar_cursor = i;
         }
     }
 
@@ -230,16 +256,8 @@ impl App {
                 let w = &self.repos[r].worktrees()[w];
                 (!w.missing).then(|| w.path.clone())
             }
-            // A repo row opens its main checkout, or in a bare repo its first worktree.
-            Some(Entry::Repo(r)) => {
-                let worktrees = self.repos[r].worktrees();
-                worktrees
-                    .iter()
-                    .find(|w| w.is_main)
-                    .or_else(|| worktrees.iter().find(|w| !w.missing))
-                    .map(|w| w.path.clone())
-            }
-            None => None,
+            // The cursor only rests on a repo row when it has no worktrees to open.
+            Some(Entry::Repo(_)) | None => None,
         };
         if let Some(path) = path {
             self.open(&path);
@@ -312,16 +330,30 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_a_repo_row_opens_its_main_checkout() {
+    fn the_cursor_steps_over_repo_rows() {
         let mut app = app();
         app.focus = Focus::Sidebar;
+        // From privue-platform's last worktree, down lands on ecourts' first, not on the ecourts row.
         app.sidebar_cursor = app
             .entries()
             .iter()
-            .position(|e| *e == Entry::Repo(1))
+            .position(|e| *e == Entry::Worktree(0, 3))
             .unwrap();
-        press(&mut app, "enter");
-        assert_eq!(app.current.as_deref(), Some(Path::new("~/code/ecourts")));
+        press(&mut app, "j");
+        assert_eq!(app.entry_at_cursor(), Some(Entry::Worktree(1, 0)));
+        press(&mut app, "k");
+        assert_eq!(app.entry_at_cursor(), Some(Entry::Worktree(0, 3)));
+        press(&mut app, "g g");
+        assert_eq!(app.entry_at_cursor(), Some(Entry::Worktree(0, 0)));
+    }
+
+    #[test]
+    fn a_repo_with_no_worktrees_can_still_be_selected() {
+        let mut app = app();
+        app.repos = fake::repos_with_variants();
+        app.focus = Focus::Sidebar;
+        app.handle_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT));
+        assert_eq!(app.entry_at_cursor(), Some(Entry::Repo(2)));
     }
 
     #[test]

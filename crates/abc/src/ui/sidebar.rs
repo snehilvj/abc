@@ -46,7 +46,7 @@ pub struct Columns {
 impl Columns {
     pub fn measure(repos: &[Repo], icons: &Icons) -> Self {
         let mut c = Self::default();
-        let width = |icon: &str, n: u32| icon.chars().count() + n.to_string().len();
+        let width = |icon: &str, n: u32| icon.chars().count() + 1 + n.to_string().len();
         for w in repos.iter().flat_map(|r| r.worktrees()) {
             if w.missing {
                 continue;
@@ -79,14 +79,23 @@ impl Columns {
 
     /// Ahead and behind, or `local` in their place.
     fn upstream(&self) -> usize {
-        let both = self.ahead + self.behind + usize::from(self.ahead > 0 && self.behind > 0);
+        let both = self.ahead + self.behind + gap(self.ahead, self.behind);
         both.max(if self.local { "local".len() } else { 0 })
     }
 
     fn status(&self) -> usize {
         let upstream = self.upstream();
-        self.changed + upstream + usize::from(self.changed > 0 && upstream > 0)
+        self.changed + upstream + gap(self.changed, upstream)
     }
+}
+
+/// Columns between two status columns. Nerd icons draw a little wider than
+/// their cell, so the icon and its count get a space too: `● 3  ↑ 2`.
+const GAP: usize = 2;
+
+/// The gap between two columns, if both are shown.
+fn gap(a: usize, b: usize) -> usize {
+    if a > 0 && b > 0 { GAP } else { 0 }
 }
 
 fn pad(text: String, width: usize, style: ratatui::style::Style) -> Span<'static> {
@@ -111,7 +120,7 @@ fn status_cells(
     let git = git.unwrap_or(&blank);
     let count = |n: u32, icon: &str| {
         if n > 0 {
-            format!("{icon}{n}")
+            format!("{icon} {n}")
         } else {
             String::new()
         }
@@ -127,7 +136,7 @@ fn status_cells(
     let upstream = c.upstream();
     if upstream > 0 {
         if c.changed > 0 {
-            cells.push(Span::raw(" "));
+            cells.push(Span::raw(" ".repeat(GAP)));
         }
         if git.upstream {
             let mut used = 0;
@@ -141,8 +150,8 @@ fn status_cells(
             }
             if c.behind > 0 {
                 if c.ahead > 0 {
-                    cells.push(Span::raw(" "));
-                    used += 1;
+                    cells.push(Span::raw(" ".repeat(GAP)));
+                    used += GAP;
                 }
                 cells.push(pad(
                     count(git.behind, icons.behind),
@@ -285,14 +294,19 @@ fn worktree_lines<'a>(
     } else {
         pr_cells(w, c, theme, icons)
     };
-    let mut second = vec![Span::raw("      ")];
+    // The branch sits under the worktree's name.
+    let mut second = vec![Span::raw("    ")];
     let (icon, head) = match &w.head {
         Head::Detached(sha) => (icons.commit, format!("{sha} detached")),
         Head::Branch(branch) => (icons.branch, branch.clone()),
     };
-    if !icon.is_empty() {
-        second.push(Span::styled(format!("{icon} "), theme.dim()));
-    }
+    // Without an icon, keep its two columns so the branch never lines up with the name.
+    let icon = if icon.is_empty() {
+        "  ".to_string()
+    } else {
+        format!("{icon} ")
+    };
+    second.push(Span::styled(icon, theme.dim()));
     second.push(Span::styled(head, theme.dim()));
     let status = if w.missing {
         Vec::new()
@@ -433,8 +447,8 @@ mod tests {
     fn texts(repos: &[Repo], style: SidebarStyle, icons: &Icons) -> Vec<String> {
         let o = Options {
             style,
-            repo_gap: 2,
-            worktree_gap: 1,
+            repo_gap: 1,
+            worktree_gap: 0,
             width: 38,
         };
         rows(repos, Some(&fake::current()), &o, &Theme::dark(), icons)
@@ -496,21 +510,18 @@ mod tests {
     }
 
     #[test]
-    fn repos_are_two_rows_apart_and_worktrees_one() {
+    fn repos_are_one_row_apart_and_worktrees_follow_each_other() {
         let lines = texts(&fake::repos(), SidebarStyle::Detailed, &Icons::UNICODE);
         assert_eq!(&lines[0], "  privue-platform");
         assert!(lines[1].starts_with("  ▸ gst-check"));
         assert!(lines[2].starts_with("      feat/gst-check"));
-        assert_eq!(lines[3], "");
-        assert!(lines[4].starts_with("    gst-rounding"));
+        assert!(lines[3].starts_with("    gst-rounding"));
         let ecourts = lines
             .iter()
             .position(|l| l.starts_with("  ecourts"))
             .unwrap();
-        assert_eq!(
-            (&lines[ecourts - 2], &lines[ecourts - 1]),
-            (&String::new(), &String::new())
-        );
+        assert_eq!(&lines[ecourts - 1], "");
+        assert!(!lines[ecourts - 2].is_empty());
     }
 
     #[test]
@@ -567,9 +578,9 @@ mod tests {
     #[test]
     fn compact_is_one_line_per_worktree_without_worktree_gaps() {
         let lines = texts(&fake::repos(), SidebarStyle::Compact, &Icons::UNICODE);
-        // 2 repos + 7 worktrees + 2 blank rows between the repos.
-        assert_eq!(lines.len(), 11);
+        // 2 repos + 7 worktrees + 1 blank row between the repos.
+        assert_eq!(lines.len(), 10);
         assert!(lines[1].starts_with("  ▸ gst-check"));
-        assert!(lines[1].contains("●3"));
+        assert!(lines[1].contains("● 3"));
     }
 }

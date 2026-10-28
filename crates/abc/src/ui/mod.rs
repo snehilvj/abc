@@ -83,19 +83,20 @@ impl Geometry {
         }
     }
 
-    /// The tab bar, under a blank row below the title.
+    /// The tab bar, right under the title. WORKTREES heads the sidebar on the same row.
     fn tab_row(&self) -> u16 {
+        self.top + 1
+    }
+
+    /// The line under the tab bar, carrying the explorer's and viewer's headers.
+    fn header_row(&self) -> u16 {
         self.top + 2
     }
 
-    /// One row holds every pane's header: WORKTREES, the worktree's folder, the file.
-    fn header_row(&self) -> u16 {
-        self.top + 3
-    }
-
-    /// First and last content rows: a blank row under the headers, down to the separator.
+    /// First and last content rows, from under the headers down to the separator.
+    /// In the sidebar, the row above them stays blank under WORKTREES.
     fn content_rows(&self) -> (u16, u16) {
-        (self.top + 5, self.bottom - 3)
+        (self.top + 3, self.bottom - 3)
     }
 }
 
@@ -257,7 +258,7 @@ fn missing_repo_at_cursor(app: &App) -> Option<&str> {
 fn sidebar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme, icons: &Icons) {
     let focused = app.focus == Focus::Sidebar || app.current_worktree().is_none();
     let header = theme.header(focused).add_modifier(Modifier::BOLD);
-    buf.set_string(g.left + 3, g.header_row(), "WORKTREES", header);
+    buf.set_string(g.left + 3, g.tab_row(), "WORKTREES", header);
     let (first, last) = g.content_rows();
     let height = (last - first + 1) as usize;
     let note = match app.connection {
