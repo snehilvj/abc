@@ -257,6 +257,8 @@ pub struct App {
     pub add_repo: Option<AddRepo>,
     /// The remove repository dialog, while it's open.
     pub remove_repo: Option<RemoveRepo>,
+    /// Whether the keys for the focused pane are showing.
+    pub help: bool,
     /// Seconds since the Unix epoch, for "2h ago". The loop that runs the app keeps it current.
     pub now: u64,
     pub quit: bool,
@@ -297,6 +299,7 @@ impl App {
             find_open: false,
             add_repo: None,
             remove_repo: None,
+            help: false,
             now: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
@@ -360,6 +363,9 @@ impl App {
         }
         if self.remove_repo.is_some() {
             return self.remove_repo_key(event);
+        }
+        if self.help {
+            return self.help_key(event);
         }
         if self.prompt.is_some() {
             return self.prompt_key(event);
@@ -452,6 +458,7 @@ impl App {
             Action::FindFile => self.open_switcher(Mode::Files),
             Action::FindInFiles => self.open_find(),
             Action::AddRepo => self.add_repo = Some(AddRepo::default()),
+            Action::Help => self.help = true,
             Action::RemoveRepo => {
                 self.remove_repo = self.repo_to_remove().map(|name| RemoveRepo {
                     name,
@@ -1020,6 +1027,17 @@ impl App {
             (Removal::Asking, KeyCode::Char('n') | KeyCode::Esc)
             | (Removal::Failed(_), KeyCode::Esc) => self.remove_repo = None,
             _ => {}
+        }
+    }
+
+    /// While help shows, esc or a help key closes it; other keys do nothing.
+    fn help_key(&mut self, event: KeyEvent) {
+        let mut pending = Vec::new();
+        let key = keys::from_event(event);
+        if event.code == KeyCode::Esc
+            || self.keymap.feed(Context::Global, &mut pending, key) == Feed::Action(Action::Help)
+        {
+            self.help = false;
         }
     }
 
@@ -2318,6 +2336,26 @@ mod tests {
         key(&mut app, KeyCode::Esc);
         assert!(app.remove_repo.is_none());
         assert_eq!(app.repos.len(), 2);
+    }
+
+    #[test]
+    fn question_mark_shows_the_keys_until_esc_or_question_mark() {
+        let mut app = with_files();
+        press(&mut app, "?");
+        assert!(app.help);
+        let cursor = app.sidebar_cursor;
+        press(&mut app, "h j");
+        assert_eq!(
+            (app.focus, app.sidebar_cursor),
+            (Focus::Explorer, cursor),
+            "other keys do nothing"
+        );
+        press(&mut app, "?");
+        assert!(!app.help);
+        press(&mut app, "space ?");
+        assert!(app.help);
+        key(&mut app, KeyCode::Esc);
+        assert!(!app.help);
     }
 
     #[test]

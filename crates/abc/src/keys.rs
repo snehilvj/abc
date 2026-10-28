@@ -496,6 +496,26 @@ impl Keymap {
             .find(|(_, a)| **a == action)
             .map(|(k, _)| k)
     }
+
+    /// Every binding for `action` that works in `context`, its own first.
+    pub fn all_keys_for(&self, context: Context, action: Action) -> Vec<&Keys> {
+        self.visible(context)
+            .into_iter()
+            .filter(|(_, a)| **a == action)
+            .map(|(k, _)| k)
+            .collect()
+    }
+
+    /// The global bindings that still work in `context`: those none of its
+    /// own hides. In the order they were made.
+    pub fn global_bindings(&self, context: Context) -> Vec<(&Keys, Action)> {
+        let visible = self.visible(context);
+        self.bindings
+            .iter()
+            .filter(|(c, keys, action)| *c == Context::Global && visible.contains(&(keys, action)))
+            .map(|(_, keys, action)| (keys, *action))
+            .collect()
+    }
 }
 
 #[cfg(test)]
@@ -724,5 +744,27 @@ mod tests {
         assert_eq!(label(Context::Global, Action::AddRepo), "space r a");
         assert_eq!(label(Context::Viewer, Action::HalfPageDown), "^d");
         assert_eq!(label(Context::Global, Action::Help), "?");
+    }
+
+    #[test]
+    fn help_sees_every_key_that_works_in_a_pane() {
+        let map = Keymap::defaults();
+        let keys = |c, a| {
+            let keys = map.all_keys_for(c, a);
+            keys.iter().map(|k| k.to_string()).collect::<Vec<_>>()
+        };
+        assert_eq!(keys(Context::Explorer, Action::Down), ["j", "↓"]);
+        assert_eq!(
+            keys(Context::Viewer, Action::FocusLeft),
+            ["esc"],
+            "h and ← move the cursor there"
+        );
+        let global: Vec<String> = map
+            .global_bindings(Context::Viewer)
+            .iter()
+            .map(|(k, _)| k.to_string())
+            .collect();
+        assert!(global.contains(&"space r a".into()) && global.contains(&"q".into()));
+        assert!(!global.contains(&"h".into()), "hidden by the viewer's h");
     }
 }

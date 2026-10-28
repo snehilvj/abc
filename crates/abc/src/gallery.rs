@@ -37,6 +37,8 @@ pub enum Screen {
     Find,
     AddRepo,
     RemoveRepo,
+    /// The keys for the focused pane, opened with `?`.
+    Help,
     /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
     Icons,
     /// Panics on the first key, to check the terminal comes back clean.
@@ -83,6 +85,7 @@ pub fn presets(screen: Screen) -> Vec<Preset> {
         Screen::Find => find(),
         Screen::AddRepo => add_repo(),
         Screen::RemoveRepo => remove_repo(),
+        Screen::Help => help(),
         Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
@@ -436,6 +439,22 @@ pub fn remove_repo() -> Vec<Preset> {
     ]
 }
 
+/// Help over each pane, opened with `?` there.
+pub fn help() -> Vec<Preset> {
+    let over = |focus: Focus| {
+        let app = App {
+            focus,
+            ..connected(fake::repos())
+        };
+        typed(app, "?")
+    };
+    vec![
+        preset("explorer", over(Focus::Explorer)),
+        preset("viewer", over(Focus::Viewer)),
+        preset("sidebar", over(Focus::Sidebar)),
+    ]
+}
+
 /// abcd's answer to a repository command, from the fake disk and host.
 fn answer_repo(app: &App, cmd: &Cmd) -> Msg {
     match cmd {
@@ -620,7 +639,8 @@ pub fn run(args: Args) -> Result<()> {
         | Screen::Switcher
         | Screen::Find
         | Screen::AddRepo
-        | Screen::RemoveRepo => {}
+        | Screen::RemoveRepo
+        | Screen::Help => {}
     }
     let presets = presets(args.screen);
     let names = || {
