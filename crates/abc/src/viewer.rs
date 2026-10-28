@@ -35,10 +35,7 @@ pub struct Text {
 
 impl Text {
     pub fn new(source: &str, lang: Lang) -> Self {
-        let lines = source
-            .split('\n')
-            .map(|l| l.replace('\t', &" ".repeat(TAB_WIDTH)))
-            .collect();
+        let lines = source.split('\n').map(shown).collect();
         Self {
             lines,
             lang,
@@ -56,6 +53,24 @@ impl Text {
         self.spans = highlight::highlight(&self.source(), self.lang);
         self
     }
+}
+
+/// A line as the viewer shows it: tabs as spaces, no `\r` from a CRLF ending,
+/// and other control characters as their symbols (␛), so a file can't send
+/// the terminal commands.
+fn shown(line: &str) -> String {
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    let mut out = String::with_capacity(line.len());
+    for c in line.chars() {
+        match c {
+            '\t' => out.extend(std::iter::repeat_n(' ', TAB_WIDTH)),
+            '\0'..='\x1f' => out.push(char::from_u32(0x2400 + c as u32).unwrap_or('\u{fffd}')),
+            '\x7f' => out.push('\u{2421}'),
+            c if c.is_control() => out.push('\u{fffd}'),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 impl Document {
@@ -412,6 +427,12 @@ mod tests {
         v.height.set(5);
         assert_eq!(v.top(), 5);
         assert_eq!(v.screen(), (5, 9));
+    }
+
+    #[test]
+    fn control_characters_never_reach_the_terminal() {
+        let t = Text::new("dos line\r\nan \x1b[31m escape\r\n\x07", Lang::Plain);
+        assert_eq!(t.lines, ["dos line", "an \u{241b}[31m escape", "\u{2407}"]);
     }
 
     #[test]
