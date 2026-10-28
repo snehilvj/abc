@@ -11,3 +11,9 @@ check:
 # Open a screen on fake data, e.g. `just gallery frame --state sidebar`
 gallery *args:
     cargo run -q -p abc -- gallery {{args}}
+
+# Record a screen's VHS tape to target/vhs/<screen>.gif, e.g. `just tape frame`
+tape screen:
+    cargo build -q -p abc
+    mkdir -p target/vhs
+    vhs docs/ui/tapes/{{screen}}.tape

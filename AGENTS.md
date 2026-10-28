@@ -7,7 +7,7 @@ Decisions: `docs/decisions/`. Screen designs: https://claude.ai/artifact/6oZWb4B
 
 - `just check`: fmt, clippy `-D warnings`, all tests. Run before every commit.
 - `just gallery <screen> [--state s] [--theme dark|light]`: a screen on fake data (needs a
-  Nerd Font). Its snapshots: `crates/abc/tests/snapshots/`, reviewed with `cargo insta review`.
+  Nerd Font). Snapshots: `cargo insta review`. `just tape <screen>`: its GIF in `target/vhs/`.
 
 ## Crates
 
