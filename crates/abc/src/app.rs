@@ -235,6 +235,10 @@ pub struct App {
     pub keymap: Keymap,
     /// Keys of an unfinished sequence, such as `space r`.
     pub pending: Vec<KeyCombination>,
+    /// When the unfinished sequence started.
+    pub pending_at: Option<std::time::Instant>,
+    /// Whether the which-key popup shows what can follow the sequence.
+    pub which_key: bool,
     /// A count typed before a viewer motion: the 12 of `12j`.
     pub count: Option<usize>,
     /// `f`, `F`, `t` or `T`, waiting for the character to find.
@@ -288,6 +292,8 @@ impl App {
             stale_client: false,
             keymap: Keymap::defaults(),
             pending: Vec::new(),
+            pending_at: None,
+            which_key: false,
             count: None,
             finding: None,
             last_find: None,
@@ -377,6 +383,19 @@ impl App {
             }
             return;
         }
+        // In an unfinished sequence, esc cancels it and backspace takes back a key.
+        if !self.pending.is_empty() && matches!(event.code, KeyCode::Esc | KeyCode::Backspace) {
+            if event.code == KeyCode::Esc {
+                self.pending.clear();
+                self.count = None;
+            } else {
+                self.pending.pop();
+            }
+            if self.pending.is_empty() {
+                self.end_sequence();
+            }
+            return;
+        }
         let context = self.context();
         // Counts are Vim's grammar rather than bindings: a digit starts one,
         // except a leading 0, which is a motion of its own.
@@ -418,6 +437,17 @@ impl App {
             Feed::Ignored => self.count = None,
             Feed::Pending(_) => {}
         }
+        if self.pending.is_empty() {
+            self.end_sequence();
+        } else if self.pending_at.is_none() {
+            self.pending_at = Some(std::time::Instant::now());
+        }
+    }
+
+    /// A sequence finished or was cancelled: the which-key popup goes.
+    fn end_sequence(&mut self) {
+        self.pending_at = None;
+        self.which_key = false;
     }
 
     fn act(&mut self, action: Action, count: Option<usize>) {
@@ -926,18 +956,33 @@ impl App {
         }
     }
 
-    /// Time passing: starts find's search once typing has paused. The loop
-    /// that runs the app calls it between keys.
-    pub fn tick(&mut self, now: std::time::Instant) {
+    /// Time passing: starts find's search or the add repository check once
+    /// typing has paused, and shows the which-key popup once a sequence has
+    /// waited. The loop that runs the app calls it between keys; it says
+    /// whether anything changed.
+    pub fn tick(&mut self, now: std::time::Instant) -> bool {
+        let mut changed = false;
         if self.find.due(now) {
             self.start_search();
+            changed = true;
         }
         if let Some(add) = &mut self.add_repo
             && add.due(now)
-            && let Some((path, name)) = add.start_check()
         {
-            self.outbox.push(Cmd::CheckRepo { path, name });
+            if let Some((path, name)) = add.start_check() {
+                self.outbox.push(Cmd::CheckRepo { path, name });
+            }
+            changed = true;
         }
+        if !self.which_key
+            && self
+                .pending_at
+                .is_some_and(|at| now.saturating_duration_since(at) >= keys::WHICH_KEY_DELAY)
+        {
+            self.which_key = true;
+            changed = true;
+        }
+        changed
     }
 
     /// A key for find in files: enter opens the selected line, esc closes,
@@ -2356,6 +2401,39 @@ mod tests {
         assert!(app.help);
         key(&mut app, KeyCode::Esc);
         assert!(!app.help);
+    }
+
+    #[test]
+    fn a_sequence_left_waiting_shows_what_can_follow() {
+        let mut app = with_files();
+        press(&mut app, "space");
+        assert!(!app.which_key, "not at once");
+        app.tick(std::time::Instant::now() + keys::WHICH_KEY_DELAY);
+        assert!(app.which_key);
+        press(&mut app, "r");
+        assert!(app.which_key, "and for the next level");
+        key(&mut app, KeyCode::Backspace);
+        assert_eq!(keys::Keys(app.pending.clone()).to_string(), "space");
+        key(&mut app, KeyCode::Esc);
+        assert!(app.pending.is_empty() && !app.which_key);
+        assert!(app.status.is_none(), "esc cancels quietly");
+        press(&mut app, "space f");
+        app.tick(std::time::Instant::now() + keys::WHICH_KEY_DELAY);
+        assert!(
+            app.switcher.is_some() && !app.which_key,
+            "typed straight through, nothing shows"
+        );
+    }
+
+    #[test]
+    fn backspace_past_the_first_key_ends_the_sequence() {
+        let mut app = with_files();
+        press(&mut app, "space");
+        app.tick(std::time::Instant::now() + keys::WHICH_KEY_DELAY);
+        key(&mut app, KeyCode::Backspace);
+        assert!(app.pending.is_empty() && !app.which_key);
+        press(&mut app, "q");
+        assert!(app.quit, "keys work as usual again");
     }
 
     #[test]

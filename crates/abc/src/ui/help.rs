@@ -156,7 +156,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     body.push(heading("Leader"));
     for (keys, action) in map.global_bindings(pane) {
         if keys.0.len() > 1 {
-            body.push(row(keys.to_string(), leader_command(action)));
+            body.push(row(keys.to_string(), action.describe()));
         }
     }
     body.push(Row::default());
@@ -196,23 +196,6 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
         footer,
     };
     dialog::draw(buf, (x, y), width, dialog, theme);
-}
-
-/// What a leader sequence does, in the Leader section.
-fn leader_command(action: Action) -> String {
-    match action {
-        FindFile => "find a file",
-        FindWorktree => "find a worktree",
-        FindInFiles => "find in files",
-        AddRepo => "add repository",
-        RemoveRepo => "remove repository",
-        Help => "keys for this pane",
-        Switcher => "switcher",
-        LastWorktree => "last worktree",
-        Quit => "quit (abcd keeps running)",
-        other => return format!("{other:?}"),
-    }
-    .into()
 }
 
 /// A line's keys, as bound in `pane`, keeping those `keep` allows: the first

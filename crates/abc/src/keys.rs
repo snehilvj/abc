@@ -8,9 +8,14 @@
 
 use std::fmt;
 use std::str::FromStr;
+use std::time::Duration;
 
 use crokey::KeyCombination;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+/// How long an unfinished sequence waits before the which-key popup lists
+/// what can follow (`keys.which_key.delay_ms`).
+pub const WHICH_KEY_DELAY: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Action {
@@ -166,6 +171,42 @@ impl FromStr for Action {
     }
 }
 
+impl Action {
+    /// What the action does, in a few words, for help's leader section and
+    /// the which-key popup.
+    pub fn describe(self) -> String {
+        match self {
+            Self::FindFile => "find a file",
+            Self::FindWorktree => "find a worktree",
+            Self::FindInFiles => "find in files",
+            Self::AddRepo => "add repository",
+            Self::RemoveRepo => "remove repository",
+            Self::Help => "keys for this pane",
+            Self::Switcher => "switcher",
+            Self::LastWorktree => "last worktree",
+            Self::Quit => "quit (abcd keeps running)",
+            Self::First => "top",
+            Self::Last => "end",
+            Self::CopyLine => "copy lines",
+            Self::CopyReference => "copy @path for Claude Code",
+            Self::CursorLineTop => "this line to the top",
+            Self::CursorLineMiddle => "this line to the middle",
+            Self::CursorLineBottom => "this line to the bottom",
+            other => return format!("{other:?}"),
+        }
+        .into()
+    }
+}
+
+/// What can follow the keys typed so far: an action, or a group with more
+/// keys to come.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Next {
+    Action(Action),
+    /// The group's name, such as "repos".
+    Group(String),
+}
+
 /// Where a binding applies. Pane bindings win over global ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Context {
@@ -312,6 +353,8 @@ pub enum Feed {
 #[derive(Debug, Clone, Default)]
 pub struct Keymap {
     bindings: Vec<(Context, Keys, Action)>,
+    /// Names for groups of sequences, by the keys they share: "space r" is "repos".
+    groups: Vec<(Keys, String)>,
 }
 
 impl Keymap {
@@ -418,6 +461,8 @@ impl Keymap {
             map.bind(*context, keys, *action)
                 .expect("default bindings are valid");
         }
+        map.name_group("space r", "repos")
+            .expect("default groups are valid");
         map
     }
 
@@ -441,6 +486,38 @@ impl Keymap {
             None => self.bindings.push((context, keys, action)),
         }
         Ok(())
+    }
+
+    /// Names the group of sequences that start with `keys`.
+    pub fn name_group(&mut self, keys: &str, name: &str) -> Result<(), String> {
+        let keys: Keys = keys.parse()?;
+        self.groups.retain(|(k, _)| *k != keys);
+        self.groups.push((keys, name.into()));
+        Ok(())
+    }
+
+    /// What can follow `pending` in `context`, a key at a time, in the order
+    /// the bindings were made: each key's action, or its group.
+    pub fn next(&self, context: Context, pending: &[KeyCombination]) -> Vec<(Keys, Next)> {
+        let mut next: Vec<(Keys, Next)> = Vec::new();
+        for (keys, action) in self.visible(context) {
+            if keys.0.len() <= pending.len() || !keys.0.starts_with(pending) {
+                continue;
+            }
+            let key = Keys(vec![keys.0[pending.len()]]);
+            if next.iter().any(|(k, _)| *k == key) {
+                continue;
+            }
+            let then = if keys.0.len() == pending.len() + 1 {
+                Next::Action(*action)
+            } else {
+                let prefix = Keys(keys.0[..=pending.len()].to_vec());
+                let name = self.groups.iter().find(|(k, _)| *k == prefix);
+                Next::Group(name.map_or_else(|| "more".into(), |(_, n)| n.clone()))
+            };
+            next.push((key, then));
+        }
+        next
     }
 
     /// Bindings that apply in `context`: its own, then each inherited one
@@ -744,6 +821,42 @@ mod tests {
         assert_eq!(label(Context::Global, Action::AddRepo), "space r a");
         assert_eq!(label(Context::Viewer, Action::HalfPageDown), "^d");
         assert_eq!(label(Context::Global, Action::Help), "?");
+    }
+
+    #[test]
+    fn what_can_follow_a_sequence_is_listed_with_groups_named() {
+        let map = Keymap::defaults();
+        let next = |c, keys: &[KeyCombination]| {
+            let next = map.next(c, keys);
+            next.into_iter()
+                .map(|(k, n)| (k.to_string(), n))
+                .collect::<Vec<_>>()
+        };
+        let space = ch(' ');
+        assert_eq!(
+            next(Context::Explorer, &[space]),
+            [
+                ("f".into(), Next::Action(Action::FindFile)),
+                ("w".into(), Next::Action(Action::FindWorktree)),
+                ("/".into(), Next::Action(Action::FindInFiles)),
+                ("r".into(), Next::Group("repos".into())),
+                ("?".into(), Next::Action(Action::Help)),
+            ]
+        );
+        assert_eq!(
+            next(Context::Explorer, &[space, ch('r')]),
+            [
+                ("a".into(), Next::Action(Action::AddRepo)),
+                ("d".into(), Next::Action(Action::RemoveRepo)),
+            ]
+        );
+        assert_eq!(
+            next(Context::Viewer, &[ch('g')]),
+            [
+                ("g".into(), Next::Action(Action::First)),
+                ("y".into(), Next::Action(Action::CopyReference)),
+            ]
+        );
     }
 
     #[test]

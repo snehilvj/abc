@@ -11,6 +11,7 @@ pub mod remove_repo;
 pub mod sidebar;
 pub mod switcher;
 pub mod viewer;
+pub mod which_key;
 
 use abc_core::model::{Checks, Head, PrState, Review};
 use ratatui::Frame;
@@ -58,6 +59,9 @@ pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     }
     keybar(buf, &g, app, theme);
     status_line(buf, &g, app, theme);
+    if app.which_key && !app.pending.is_empty() {
+        which_key::draw(buf, area, app, theme);
+    }
     if let Some(s) = &app.switcher {
         fade(buf, area, theme);
         switcher::draw(buf, area, app, s, theme);

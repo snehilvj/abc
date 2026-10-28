@@ -22,6 +22,7 @@ use crate::explorer::{Explorer, Listing};
 use crate::fake;
 use crate::find;
 use crate::highlight;
+use crate::keys;
 use crate::motion::Pos;
 use crate::theme::{Theme, ThemeChoice};
 use crate::ui;
@@ -39,6 +40,8 @@ pub enum Screen {
     RemoveRepo,
     /// The keys for the focused pane, opened with `?`.
     Help,
+    /// What can follow `space`, or any key sequence left waiting.
+    Leader,
     /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
     Icons,
     /// Panics on the first key, to check the terminal comes back clean.
@@ -86,6 +89,7 @@ pub fn presets(screen: Screen) -> Vec<Preset> {
         Screen::AddRepo => add_repo(),
         Screen::RemoveRepo => remove_repo(),
         Screen::Help => help(),
+        Screen::Leader => leader(),
         Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
@@ -455,6 +459,30 @@ pub fn help() -> Vec<Preset> {
     ]
 }
 
+/// The which-key popup: keys typed, then left to wait.
+pub fn leader() -> Vec<Preset> {
+    let waited = |keys: &str| {
+        let mut app = typed(connected(fake::repos()), keys);
+        app.tick(Instant::now() + keys::WHICH_KEY_DELAY);
+        app
+    };
+    let viewer = {
+        let app = App {
+            focus: Focus::Viewer,
+            ..connected(fake::repos())
+        };
+        let mut app = typed(app, "g");
+        app.tick(Instant::now() + keys::WHICH_KEY_DELAY);
+        app
+    };
+    vec![
+        preset("leader", waited(" ")),
+        preset("repos", waited(" r")),
+        preset("unbound", typed(connected(fake::repos()), " x")),
+        preset("viewer", viewer),
+    ]
+}
+
 /// abcd's answer to a repository command, from the fake disk and host.
 fn answer_repo(app: &App, cmd: &Cmd) -> Msg {
     match cmd {
@@ -640,7 +668,8 @@ pub fn run(args: Args) -> Result<()> {
         | Screen::Find
         | Screen::AddRepo
         | Screen::RemoveRepo
-        | Screen::Help => {}
+        | Screen::Help
+        | Screen::Leader => {}
     }
     let presets = presets(args.screen);
     let names = || {
@@ -681,10 +710,12 @@ pub fn run(args: Args) -> Result<()> {
                     app.apply(msg);
                     break;
                 }
-                // A search starts once typing pauses.
-                app.tick(Instant::now());
+                // A search starts once typing pauses; the which-key popup once a sequence waits.
+                let changed = app.tick(Instant::now());
                 if !app.outbox.is_empty() {
                     serve(&mut app, &tx);
+                }
+                if changed {
                     break;
                 }
                 if event::poll(Duration::from_millis(30))? {
