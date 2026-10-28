@@ -48,7 +48,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, switcher: &Switcher, theme:
         Mode::Files => {
             for (i, hit) in shown {
                 let path = &switcher.candidates()[hit.candidate].text;
-                let (icon, color) = icons::file(path, theme);
+                let (icon, color) = icons::for_file(path, theme);
                 let mut left = vec![no_icon(theme)];
                 left.push(Span::styled(icon.to_string(), theme.style(color)));
                 left.push(blank(theme.icon_gap));
@@ -129,14 +129,14 @@ fn message<'a>(switcher: &Switcher, theme: &Theme) -> Option<Line<'a>> {
     };
     let line = match &switcher.source {
         Source::Loading => labelled(
-            icons::SYNC,
+            icons::sync(),
             theme.dim(),
             "Loading files…",
             theme.dim(),
             theme,
         ),
         Source::Failed(why) => label::badge(
-            icons::FAILURE,
+            icons::failure(),
             format!("Can't list files: {why}"),
             theme.error,
             theme,
@@ -251,7 +251,7 @@ impl WorktreeLayout {
     ) -> Row<'a> {
         let current = app.current.as_deref() == Some(w.path.as_path());
         let mut left = if current {
-            marker(icons::CURRENT, theme.accent(), theme)
+            marker(icons::current(), theme.accent(), theme)
         } else {
             vec![no_icon(theme)]
         };
@@ -274,8 +274,8 @@ impl WorktreeLayout {
         ));
         left.push(blank(1));
         let icon = match w.head {
-            Head::Branch(_) => icons::BRANCH,
-            Head::Detached(_) => icons::COMMIT,
+            Head::Branch(_) => icons::branch(),
+            Head::Detached(_) => icons::commit(),
         };
         left.extend(marker(icon, theme.dim(), theme));
         let branch = head_name(&w.head);

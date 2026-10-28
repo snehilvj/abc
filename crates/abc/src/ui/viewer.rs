@@ -38,7 +38,7 @@ pub fn header<'a>(viewer: &Viewer, width: usize, focused: bool, theme: &Theme) -
         Document::Text(text) => text.lang.label(),
         _ => Lang::of(name).label(),
     };
-    let (icon, color) = icons::file(name, theme);
+    let (icon, color) = icons::for_file(name, theme);
     let path = viewer.path.join("/");
     let tail = format!(" · {lang} ");
     // " " + icon + gap + path + tail
@@ -91,7 +91,7 @@ pub fn draw(
         Document::Loading => notice(
             buf,
             vec![labelled(
-                icons::SYNC,
+                icons::sync(),
                 theme.dim(),
                 format!("Loading {}…", viewer.name()),
                 theme.dim(),
@@ -102,7 +102,7 @@ pub fn draw(
             buf,
             vec![
                 badge(
-                    icons::FAILURE,
+                    icons::failure(),
                     format!("Can't read {}", viewer.name()),
                     theme.error,
                     theme,
@@ -114,7 +114,7 @@ pub fn draw(
         Document::Binary { size } => notice(
             buf,
             vec![labelled(
-                icons::INFO,
+                icons::info(),
                 theme.dim(),
                 format!("Binary file · {}", bytes(*size)),
                 theme.dim(),
@@ -125,7 +125,7 @@ pub fn draw(
             buf,
             vec![
                 badge(
-                    icons::WARNING,
+                    icons::warning(),
                     format!("Too large to show · {}", bytes(*size)),
                     theme.warning,
                     theme,

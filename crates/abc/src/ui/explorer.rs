@@ -30,7 +30,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, listing: Option<&Listing>, focused: bo
         None | Some(Listing::Loading) => message(
             buf,
             vec![labelled(
-                icons::SYNC,
+                icons::sync(),
                 theme.dim(),
                 "Loading files…",
                 theme.dim(),
@@ -40,7 +40,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, listing: Option<&Listing>, focused: bo
         Some(Listing::Failed(why)) => message(
             buf,
             vec![
-                badge(icons::FAILURE, "Can't list files", theme.error, theme),
+                badge(icons::failure(), "Can't list files", theme.error, theme),
                 vec![],
                 vec![Span::styled(why.as_str(), theme.text())],
             ],
@@ -72,8 +72,8 @@ fn tree(buf: &mut Buffer, area: Rect, explorer: &Explorer, focused: bool, theme:
     }
     let Some((_, _, items)) = &*cache else { return };
     // A folder's open/closed icon is drawn as tui-tree-widget's node symbol, in the folder's colour.
-    let closed = format!("{}{}", icons::FOLDER, blank(theme.icon_gap).content);
-    let open = format!("{}{}", icons::FOLDER_OPEN, blank(theme.icon_gap).content);
+    let closed = format!("{}{}", icons::folder(), blank(theme.icon_gap).content);
+    let open = format!("{}{}", icons::folder_open(), blank(theme.icon_gap).content);
     let highlight = if focused {
         Style::new().bg(theme.selection)
     } else {
@@ -113,7 +113,7 @@ fn items(
                         .expect("names are unique within a folder")
                 }
                 None => {
-                    let (icon, color) = icons::file(&node.name, theme);
+                    let (icon, color) = icons::for_file(&node.name, theme);
                     let name = if open == Some(prefix) {
                         theme.accent().add_modifier(Modifier::BOLD)
                     } else {

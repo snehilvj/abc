@@ -18,28 +18,32 @@ use crate::theme::Theme;
 /// What each icon means, as its label in the catalogue, and its colour role.
 fn vocabulary(theme: &Theme) -> Vec<(&'static str, &'static str, Option<Color>)> {
     vec![
-        (icons::REPO, "repository", None),
-        (icons::HOME, "main checkout", None),
-        (icons::CURRENT, "current worktree", None),
-        (icons::BRANCH, "branch", None),
-        (icons::COMMIT, "detached HEAD", None),
-        (icons::PR_OPEN, "#142 open", Some(theme.pr_open)),
-        (icons::PR_DRAFT, "#88 draft", Some(theme.pr_draft)),
-        (icons::PR_MERGED, "#141 merged", Some(theme.pr_merged)),
-        (icons::PR_CLOSED, "#97 closed", Some(theme.pr_closed)),
-        (icons::CHECKS_PASSING, "checks passing", Some(theme.ok)),
-        (icons::CHECKS_FAILING, "checks failing", Some(theme.error)),
-        (icons::CHECKS_PENDING, "checks running", Some(theme.warning)),
-        (icons::CHANGED, "3 changed files", Some(theme.git_changed)),
-        (icons::AHEAD, "2 ahead", Some(theme.git_ahead)),
-        (icons::BEHIND, "1 behind", Some(theme.git_behind)),
-        (icons::LOCK, "locked", None),
-        (icons::WARNING, "missing", Some(theme.warning)),
-        (icons::SUCCESS, "added privue-agents", Some(theme.ok)),
-        (icons::FAILURE, "abcd did not start", Some(theme.error)),
-        (icons::INFO, "abcd restarted", Some(theme.accent)),
-        (icons::SYNC, "starting abcd…", Some(theme.accent)),
-        (icons::DISCONNECTED, "lost abcd", Some(theme.error)),
+        (icons::repo(), "repository", None),
+        (icons::home(), "main checkout", None),
+        (icons::current(), "current worktree", None),
+        (icons::branch(), "branch", None),
+        (icons::commit(), "detached HEAD", None),
+        (icons::pr_open(), "#142 open", Some(theme.pr_open)),
+        (icons::pr_draft(), "#88 draft", Some(theme.pr_draft)),
+        (icons::pr_merged(), "#141 merged", Some(theme.pr_merged)),
+        (icons::pr_closed(), "#97 closed", Some(theme.pr_closed)),
+        (icons::checks_passing(), "checks passing", Some(theme.ok)),
+        (icons::checks_failing(), "checks failing", Some(theme.error)),
+        (
+            icons::checks_pending(),
+            "checks running",
+            Some(theme.warning),
+        ),
+        (icons::changed(), "3 changed files", Some(theme.git_changed)),
+        (icons::ahead(), "2 ahead", Some(theme.git_ahead)),
+        (icons::behind(), "1 behind", Some(theme.git_behind)),
+        (icons::lock(), "locked", None),
+        (icons::warning(), "missing", Some(theme.warning)),
+        (icons::success(), "added privue-agents", Some(theme.ok)),
+        (icons::failure(), "abcd did not start", Some(theme.error)),
+        (icons::info(), "abcd restarted", Some(theme.accent)),
+        (icons::sync(), "starting abcd…", Some(theme.accent)),
+        (icons::disconnected(), "lost abcd", Some(theme.error)),
     ]
 }
 
@@ -242,7 +246,7 @@ pub fn draw_files(buf: &mut Buffer, area: Rect, theme: &Theme) {
     );
     put(
         labelled(
-            icons::FOLDER,
+            icons::folder(),
             folder,
             "src",
             folder.add_modifier(Modifier::BOLD),
@@ -253,7 +257,7 @@ pub fn draw_files(buf: &mut Buffer, area: Rect, theme: &Theme) {
     );
     put(
         labelled(
-            icons::FOLDER_OPEN,
+            icons::folder_open(),
             folder,
             "src (open)",
             folder.add_modifier(Modifier::BOLD),
@@ -270,7 +274,7 @@ pub fn draw_files(buf: &mut Buffer, area: Rect, theme: &Theme) {
         }
         put(vec![Span::styled(*group, theme.bold())], &mut col, &mut y);
         for name in *names {
-            let (icon, color) = icons::file(name, theme);
+            let (icon, color) = icons::for_file(name, theme);
             put(
                 labelled(
                     icon.to_string(),

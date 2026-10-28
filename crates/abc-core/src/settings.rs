@@ -64,6 +64,14 @@ pub struct Icons {
     /// Cells between an icon and its label.
     #[config(default = 2)]
     pub gap: u16,
+    /// Glyphs in place of abc's own, one character each, such as
+    /// branch = "\u{e0a0}". The icons: repo, home, branch, commit, current,
+    /// pr_open, pr_draft, pr_merged, pr_closed, checks_passing,
+    /// checks_failing, checks_pending, changed, ahead, behind, lock, success,
+    /// failure, warning, info, sync, disconnected, file, folder, folder_open.
+    /// File types' icons come from devicons.
+    #[config(default = {})]
+    pub glyphs: BTreeMap<String, String>,
 }
 
 /// The widths of the sidebar, explorer and viewer, in cells.

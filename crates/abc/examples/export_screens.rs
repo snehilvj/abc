@@ -143,8 +143,8 @@ fn main() {
         .iter()
         .flat_map(|(_, names)| names.iter().copied());
     for name in mockups.into_iter().chain(catalogue) {
-        let (glyph, dark) = abc::icons::file(name, &theme);
-        let (_, light) = abc::icons::file(name, &light);
+        let (glyph, dark) = abc::icons::for_file(name, &theme);
+        let (_, light) = abc::icons::for_file(name, &light);
         println!("icon\t{name}\t{glyph}\t{}\t{}", color(dark), color(light));
     }
 }

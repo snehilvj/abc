@@ -149,8 +149,14 @@ pub fn config(command: Config, paths: &Paths) -> ExitCode {
 /// The settings in `file`, keys and all, or everything wrong with them.
 pub fn check_settings(file: &Path) -> Result<Settings, Vec<String>> {
     let settings = Settings::load(file).map_err(|e| vec![Settings::describe(&e)])?;
-    crate::keys::Keymap::from_settings(&settings.keys)?;
-    Ok(settings)
+    let keys = crate::keys::Keymap::from_settings(&settings.keys).err();
+    let icons = crate::icons::with_overrides(&settings.icons.glyphs).err();
+    let errors: Vec<String> = keys.into_iter().chain(icons).flatten().collect();
+    if errors.is_empty() {
+        Ok(settings)
+    } else {
+        Err(errors)
+    }
 }
 
 /// `abc repo …`, through abcd, starting it if need be.

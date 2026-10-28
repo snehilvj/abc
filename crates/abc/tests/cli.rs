@@ -118,3 +118,29 @@ fn themes_are_printed_to_copy_and_checked_when_in_use() {
     let nope = abc(home.path(), &["config", "theme", "../x"]);
     assert!(String::from_utf8_lossy(&nope.stderr).contains("isn't a theme name"));
 }
+
+#[test]
+fn icon_overrides_are_checked() {
+    let home = tempfile::tempdir().unwrap();
+    let config = home.path().join("config/abc/test");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("config.toml"),
+        "[icons.glyphs]\nbranch = \"b\"\n",
+    )
+    .unwrap();
+    let ok = abc(home.path(), &["--profile", "test", "config", "check"]);
+    assert!(
+        ok.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    std::fs::write(
+        config.join("config.toml"),
+        "[icons.glyphs]\nbrnch = \"b\"\n",
+    )
+    .unwrap();
+    let bad = abc(home.path(), &["--profile", "test", "config", "check"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&bad.stderr).contains("\"brnch\" isn't an icon abc has"));
+}

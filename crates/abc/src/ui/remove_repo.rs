@@ -29,10 +29,10 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, remove: &RemoveRepo, theme:
     let progress = match &remove.stage {
         Removal::Asking => Vec::new(),
         Removal::Removing => {
-            label::labelled(icons::SYNC, theme.dim(), "removing", theme.dim(), theme)
+            label::labelled(icons::sync(), theme.dim(), "removing", theme.dim(), theme)
         }
         Removal::Failed(why) => {
-            label::badge(icons::FAILURE, format!("abcd: {why}"), theme.error, theme)
+            label::badge(icons::failure(), format!("abcd: {why}"), theme.error, theme)
         }
     };
     let body = vec![

@@ -59,7 +59,7 @@ pub fn draw(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
         body.push(match *row {
             Found::File(n) => {
                 let file = &f.files[n];
-                let (icon, color) = icons::file(&file.path, theme);
+                let (icon, color) = icons::for_file(&file.path, theme);
                 Row::new(vec![
                     Span::styled(icon.to_string(), theme.style(color)),
                     blank(theme.icon_gap),
@@ -130,7 +130,7 @@ fn message<'a>(app: &App, name: &str, theme: &Theme) -> Option<Line<'a>> {
             theme.dim(),
         )],
         Progress::Failed(why) => label::badge(
-            icons::FAILURE,
+            icons::failure(),
             format!("Can't search: {why}"),
             theme.error,
             theme,

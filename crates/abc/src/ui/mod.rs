@@ -235,7 +235,7 @@ fn title<'a>(app: &'a App, theme: &Theme) -> Line<'a> {
         if let Head::Branch(branch) = &w.head {
             spans.push(dot());
             spans.extend(label::labelled(
-                icons::BRANCH,
+                icons::branch(),
                 theme.dim(),
                 branch.as_str(),
                 theme.text(),
@@ -399,7 +399,7 @@ fn notice(app: &App) -> Option<Vec<NoticeLine>> {
         Connection::Starting => vec![],
         Connection::StartFailed => vec![
             headline(
-                icons::FAILURE,
+                icons::failure(),
                 "abcd did not start within 3 seconds",
                 Role::Error,
             ),
@@ -413,7 +413,7 @@ fn notice(app: &App) -> Option<Vec<NoticeLine>> {
         ],
         Connection::Incompatible { ours, theirs } => vec![
             headline(
-                icons::WARNING,
+                icons::warning(),
                 "This abc is too old for the running abcd",
                 Role::Warning,
             ),
@@ -444,7 +444,7 @@ fn notice(app: &App) -> Option<Vec<NoticeLine>> {
                 let repo = app.repos.iter().find(|r| r.name == name)?;
                 let remove = key_label(app, Context::Global, Action::RemoveRepo);
                 vec![
-                    headline(icons::FAILURE, format!("{name} is missing"), Role::Error),
+                    headline(icons::failure(), format!("{name} is missing"), Role::Error),
                     blank(),
                     line(
                         format!("{} no longer exists.", repo.path.display()),
@@ -690,29 +690,29 @@ fn status_message(app: &App, theme: &Theme) -> Option<(Option<&'static str>, Str
     }
     let message = |icon, text: &str, color| Some((Some(icon), text.to_string(), color));
     match &app.connection {
-        Connection::Starting => message(icons::SYNC, "starting abcd…", theme.accent),
-        Connection::StartFailed => message(icons::FAILURE, "abcd did not start", theme.error),
+        Connection::Starting => message(icons::sync(), "starting abcd…", theme.accent),
+        Connection::StartFailed => message(icons::failure(), "abcd did not start", theme.error),
         Connection::Lost => message(
-            icons::DISCONNECTED,
+            icons::disconnected(),
             "lost abcd · reconnecting…",
             theme.error,
         ),
         Connection::Incompatible { .. } => {
-            message(icons::WARNING, "protocol mismatch", theme.warning)
+            message(icons::warning(), "protocol mismatch", theme.warning)
         }
         Connection::Connected => match &app.status {
             Some(s) => {
                 let (icon, color) = match s.kind {
                     StatusKind::Plain => return Some((None, s.text.clone(), theme.text)),
-                    StatusKind::Info => (icons::INFO, theme.accent),
-                    StatusKind::Ok => (icons::SUCCESS, theme.ok),
-                    StatusKind::Warning => (icons::WARNING, theme.warning),
-                    StatusKind::Error => (icons::FAILURE, theme.error),
+                    StatusKind::Info => (icons::info(), theme.accent),
+                    StatusKind::Ok => (icons::success(), theme.ok),
+                    StatusKind::Warning => (icons::warning(), theme.warning),
+                    StatusKind::Error => (icons::failure(), theme.error),
                 };
                 message(icon, &s.text, color)
             }
             None if app.stale_client => message(
-                icons::WARNING,
+                icons::warning(),
                 "this abc is older than the running abcd · quit and reopen abc",
                 theme.warning,
             ),

@@ -338,6 +338,10 @@ fn apply(settings: &Settings, app: &mut App, theme: &mut Theme) {
     app.repo_gap = settings.sidebar.repo_gap;
     app.worktree_gap = settings.sidebar.worktree_gap;
     theme.icon_gap = usize::from(settings.icons.gap);
+    crate::icons::set(
+        crate::icons::with_overrides(&settings.icons.glyphs)
+            .unwrap_or(crate::icons::Glyphs::DEFAULT),
+    );
     app.scroll_lines = settings.mouse.scroll_lines.max(1);
     app.switcher_rows = settings.switcher.rows.max(1);
     app.find.rows = settings.find.rows.max(1);

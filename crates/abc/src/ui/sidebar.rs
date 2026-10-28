@@ -102,7 +102,7 @@ pub(crate) fn status_cells<'a>(
     if c.changed > 0 {
         let changed = if git.changed > 0 {
             badge(
-                icons::CHANGED,
+                icons::changed(),
                 git.changed.to_string(),
                 theme.git_changed,
                 theme,
@@ -122,7 +122,7 @@ pub(crate) fn status_cells<'a>(
         } else {
             if git.ahead > 0 {
                 upstream.extend(badge(
-                    icons::AHEAD,
+                    icons::ahead(),
                     git.ahead.to_string(),
                     theme.git_ahead,
                     theme,
@@ -133,7 +133,7 @@ pub(crate) fn status_cells<'a>(
                     upstream.push(blank(BADGE_GAP));
                 }
                 upstream.extend(badge(
-                    icons::BEHIND,
+                    icons::behind(),
                     git.behind.to_string(),
                     theme.git_behind,
                     theme,
@@ -150,7 +150,7 @@ pub(crate) fn pr_cells<'a>(w: &Worktree, c: &Columns, theme: &Theme) -> Vec<Span
     let mut cells = Vec::new();
     if c.lock {
         cells.push(Span::styled(
-            if w.locked { icons::LOCK } else { " " },
+            if w.locked { icons::lock() } else { " " },
             theme.dim(),
         ));
         if c.pr_number > 0 {
@@ -188,7 +188,7 @@ pub(crate) fn pr_cells<'a>(w: &Worktree, c: &Columns, theme: &Theme) -> Vec<Span
 }
 
 fn missing<'a>(theme: &Theme) -> Vec<Span<'a>> {
-    badge(icons::WARNING, "missing", theme.warning, theme)
+    badge(icons::warning(), "missing", theme.warning, theme)
 }
 
 fn repo_line<'a>(repo: &'a Repo, width: u16, theme: &Theme) -> Line<'a> {
@@ -198,7 +198,13 @@ fn repo_line<'a>(repo: &'a Repo, width: u16, theme: &Theme) -> Line<'a> {
         (theme.accent(), theme.bold(), Vec::new())
     };
     let mut left = vec![blank(2)];
-    left.extend(labelled(icons::REPO, icon, repo.name.as_str(), name, theme));
+    left.extend(labelled(
+        icons::repo(),
+        icon,
+        repo.name.as_str(),
+        name,
+        theme,
+    ));
     fit(left, right, width)
 }
 
@@ -212,7 +218,7 @@ fn worktree_lines<'a>(
     // The marker column holds the current-worktree icon; names line up after it.
     let mut left = vec![blank(2)];
     if current {
-        left.extend(marker(icons::CURRENT, theme.accent(), theme));
+        left.extend(marker(icons::current(), theme.accent(), theme));
     } else {
         left.push(no_icon(theme));
     }
@@ -223,7 +229,7 @@ fn worktree_lines<'a>(
     };
     if w.is_main {
         left.extend(labelled(
-            icons::HOME,
+            icons::home(),
             theme.dim(),
             w.name.as_str(),
             name_style,
@@ -254,8 +260,8 @@ fn worktree_lines<'a>(
         pr_cells(w, c, theme)
     };
     let (icon, head) = match &w.head {
-        Head::Detached(sha) => (icons::COMMIT, format!("{sha} detached")),
-        Head::Branch(branch) => (icons::BRANCH, branch.clone()),
+        Head::Detached(sha) => (icons::commit(), format!("{sha} detached")),
+        Head::Branch(branch) => (icons::branch(), branch.clone()),
     };
     // The branch line starts under the worktree's name.
     let mut second = vec![blank(2), no_icon(theme)];
@@ -321,10 +327,10 @@ pub fn pr_color(state: PrState, theme: &Theme) -> Color {
 
 pub fn pr_icon(state: PrState) -> &'static str {
     match state {
-        PrState::Open => icons::PR_OPEN,
-        PrState::Draft => icons::PR_DRAFT,
-        PrState::Merged => icons::PR_MERGED,
-        PrState::Closed => icons::PR_CLOSED,
+        PrState::Open => icons::pr_open(),
+        PrState::Draft => icons::pr_draft(),
+        PrState::Merged => icons::pr_merged(),
+        PrState::Closed => icons::pr_closed(),
     }
 }
 
@@ -338,9 +344,9 @@ pub fn checks_color(checks: Checks, theme: &Theme) -> Color {
 
 pub fn checks_icon(checks: Checks) -> &'static str {
     match checks {
-        Checks::Passing => icons::CHECKS_PASSING,
-        Checks::Failing => icons::CHECKS_FAILING,
-        Checks::Pending => icons::CHECKS_PENDING,
+        Checks::Passing => icons::checks_passing(),
+        Checks::Failing => icons::checks_failing(),
+        Checks::Pending => icons::checks_pending(),
     }
 }
 

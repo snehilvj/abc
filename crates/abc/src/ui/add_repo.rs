@@ -135,9 +135,9 @@ fn field<'a>(
 
 /// What abcd made of the path and name, or how adding is going.
 fn check_line<'a>(app: &App, add: &AddRepo, theme: &Theme) -> Line<'a> {
-    let failure = |text: String| label::badge(icons::FAILURE, text, theme.error, theme);
-    let success = |text: String| label::badge(icons::SUCCESS, text, theme.ok, theme);
-    let progress = |text: String| labelled(icons::SYNC, theme.dim(), text, theme.dim(), theme);
+    let failure = |text: String| label::badge(icons::failure(), text, theme.error, theme);
+    let success = |text: String| label::badge(icons::success(), text, theme.ok, theme);
+    let progress = |text: String| labelled(icons::sync(), theme.dim(), text, theme.dim(), theme);
     let name = add.name().to_string();
     // A repository abcd can add still needs a free name.
     let named = |ok: String| {
