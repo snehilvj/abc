@@ -77,7 +77,11 @@ fn main() {
             &render(&preset.app, preset.size.unwrap_or((120, 40)), &theme),
         );
     }
-    for (name, screen) in [("explorer", Screen::Explorer), ("viewer", Screen::Viewer)] {
+    for (name, screen) in [
+        ("explorer", Screen::Explorer),
+        ("viewer", Screen::Viewer),
+        ("switcher", Screen::Switcher),
+    ] {
         for preset in gallery::presets(screen) {
             dump(name, preset.name, &render(&preset.app, (120, 40), &theme));
         }
