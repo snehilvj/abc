@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 
 use abc_core::model::{Repo, Worktree};
 use crokey::KeyCombination;
-use ratatui::crossterm::event::{KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 use crate::explorer::{Listing, NodePath};
 use crate::highlight::{self, Lang};
 use crate::keys::{self, Action, Context, Feed, Keymap};
 use crate::layout::Widths;
-use crate::viewer::{Document, Viewer};
+use crate::motion::{self, Find, Pos};
+use crate::viewer::{Document, Place, Viewer};
 
 /// Work the app asks for: abcd reads files; highlighting runs off the UI thread.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,8 +137,17 @@ pub struct App {
     pub keymap: Keymap,
     /// Keys of an unfinished sequence, such as `space r`.
     pub pending: Vec<KeyCombination>,
+    /// A count typed before a viewer motion: the 12 of `12j`.
+    pub count: Option<usize>,
+    /// `f`, `F`, `t` or `T`, waiting for the character to find.
+    pub finding: Option<Action>,
+    /// The last character find, for `;` and `,`.
+    pub last_find: Option<Find>,
     pub quit: bool,
 }
+
+/// The largest count a motion takes.
+const MAX_COUNT: usize = 999_999;
 
 impl App {
     pub fn new(profile: impl Into<String>) -> Self {
@@ -160,6 +170,9 @@ impl App {
             stale_client: false,
             keymap: Keymap::defaults(),
             pending: Vec::new(),
+            count: None,
+            finding: None,
+            last_find: None,
             quit: false,
         }
     }
@@ -204,13 +217,41 @@ impl App {
         if event.kind != KeyEventKind::Press {
             return;
         }
+        if let Some(action) = self.finding.take() {
+            let count = self.count.take();
+            if let Some(target) = typed_char(event) {
+                self.find_char(action, target, count);
+            }
+            return;
+        }
         let context = self.context();
+        // Counts are Vim's grammar rather than bindings: a digit starts one,
+        // except a leading 0, which is a motion of its own.
+        if context == Context::Viewer && self.pending.is_empty() {
+            match (typed_char(event), self.count) {
+                (Some(c @ '0'..='9'), count) if c != '0' || count.is_some() => {
+                    let digit = c as usize - '0' as usize;
+                    let count = count.unwrap_or(0).saturating_mul(10) + digit;
+                    self.count = Some(count.min(MAX_COUNT));
+                    return;
+                }
+                (None, Some(_)) if event.code == KeyCode::Esc => {
+                    self.count = None;
+                    return;
+                }
+                _ => {}
+            }
+        }
         match self
             .keymap
             .feed(context, &mut self.pending, keys::from_event(event))
         {
-            Feed::Action(action) => self.act(action),
+            Feed::Action(action) => {
+                let count = self.count.take();
+                self.act(action, count)
+            }
             Feed::Unbound(keys) => {
+                self.count = None;
                 let help = self
                     .keymap
                     .keys_for(Context::Global, Action::Help)
@@ -221,15 +262,20 @@ impl App {
                     format!("{keys} isn't bound · {help} lists the keys"),
                 ));
             }
-            Feed::Pending(_) | Feed::Ignored => {}
+            Feed::Ignored => self.count = None,
+            Feed::Pending(_) => {}
         }
     }
 
-    fn act(&mut self, action: Action) {
+    fn act(&mut self, action: Action, count: Option<usize>) {
+        if self.context() == Context::Viewer && self.viewer_action(action, count) {
+            return;
+        }
         match action {
             Action::Quit => self.quit = true,
-            Action::FocusLeft => self.move_focus(-1),
-            Action::FocusRight => self.move_focus(1),
+            // With no text to move through, h and l still move between panes.
+            Action::FocusLeft | Action::Left => self.move_focus(-1),
+            Action::FocusRight | Action::Right => self.move_focus(1),
             Action::LastWorktree => {
                 if let Some(last) = self.last.clone() {
                     self.open(&last);
@@ -256,18 +302,6 @@ impl App {
                 if self.context() == Context::Explorer =>
             {
                 self.explorer_action(action)
-            }
-            Action::Down
-            | Action::Up
-            | Action::HalfPageDown
-            | Action::HalfPageUp
-            | Action::PageDown
-            | Action::PageUp
-            | Action::First
-            | Action::Last
-                if self.context() == Context::Viewer =>
-            {
-                self.viewer_action(action)
             }
             // The switcher, dialogs, help, explorer and viewer arrive with their screens.
             _ => {}
@@ -303,21 +337,104 @@ impl App {
         self.current.as_ref().and_then(|p| self.viewers.get(p))
     }
 
-    fn viewer_action(&mut self, action: Action) {
+    /// Moves through the open file, Vim style. False if there's no text to
+    /// move through, or `action` isn't the viewer's.
+    fn viewer_action(&mut self, action: Action, count: Option<usize>) -> bool {
+        use Action::*;
         let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) else {
-            return;
+            return false;
         };
+        if !viewer.has_text() {
+            return false;
+        }
+        let n = count.unwrap_or(1);
+        let at = viewer.cursor;
         let page = viewer.page();
+        // Lines by number: `12G`, `H`, `50%`. The cursor lands on the first non-blank.
+        let to_line = |viewer: &mut Viewer, line: usize| {
+            viewer.jump_by(1, |l, _| {
+                motion::first_non_blank(l, line.min(l.len().saturating_sub(1)))
+            })
+        };
         match action {
-            Action::Down => viewer.scroll_by(1),
-            Action::Up => viewer.scroll_by(-1),
-            Action::HalfPageDown => viewer.scroll_by(page / 2),
-            Action::HalfPageUp => viewer.scroll_by(-page / 2),
-            Action::PageDown => viewer.scroll_by(page),
-            Action::PageUp => viewer.scroll_by(-page),
-            Action::First => viewer.to_top(),
-            Action::Last => viewer.to_end(),
-            _ => {}
+            Left => viewer.go(Pos::new(at.line, at.col.saturating_sub(n))),
+            Right => viewer.go(Pos::new(at.line, at.col.saturating_add(n))),
+            Down => viewer.go_lines(n as isize),
+            Up => viewer.go_lines(-(n as isize)),
+            WordForward => viewer.go_by(n, |l, p| motion::word_forward(l, p, false)),
+            WordBackward => viewer.go_by(n, |l, p| motion::word_backward(l, p, false)),
+            WordEnd => viewer.go_by(n, |l, p| motion::word_end(l, p, false)),
+            BigWordForward => viewer.go_by(n, |l, p| motion::word_forward(l, p, true)),
+            BigWordBackward => viewer.go_by(n, |l, p| motion::word_backward(l, p, true)),
+            BigWordEnd => viewer.go_by(n, |l, p| motion::word_end(l, p, true)),
+            LineStart => viewer.go(Pos::new(at.line, 0)),
+            FirstNonBlank => viewer.go_by(1, |l, p| motion::first_non_blank(l, p.line)),
+            LineEnd => {
+                viewer.go_lines(n as isize - 1);
+                viewer.go_line_end();
+            }
+            First => to_line(viewer, count.map_or(0, |n| n - 1)),
+            Last => to_line(viewer, count.map_or(usize::MAX, |n| n - 1)),
+            ScreenTop | ScreenMiddle | ScreenBottom => {
+                let (top, bottom) = viewer.screen();
+                let line = match action {
+                    ScreenTop => (top + n - 1).min(bottom),
+                    ScreenBottom => bottom.saturating_sub(n - 1).max(top),
+                    _ => top + (bottom - top) / 2,
+                };
+                to_line(viewer, line);
+            }
+            HalfPageDown => viewer.scroll_with_cursor(page / 2),
+            HalfPageUp => viewer.scroll_with_cursor(-page / 2),
+            // A page, keeping two lines of the last one in view.
+            PageDown => viewer.scroll_with_cursor((page - 2).max(1)),
+            PageUp => viewer.scroll_with_cursor(-(page - 2).max(1)),
+            ScrollDown => viewer.scroll_by(n as isize),
+            ScrollUp => viewer.scroll_by(-(n as isize)),
+            CursorLineTop => viewer.place(Place::Top),
+            CursorLineMiddle => viewer.place(Place::Middle),
+            CursorLineBottom => viewer.place(Place::Bottom),
+            ParagraphForward => viewer.jump_by(n, motion::paragraph_forward),
+            ParagraphBackward => viewer.jump_by(n, motion::paragraph_backward),
+            MatchingBracket => match count {
+                // `50%` goes halfway through the file.
+                Some(percent) => {
+                    let line = (percent.min(100) * viewer.lines().len()).div_ceil(100);
+                    to_line(viewer, line.saturating_sub(1));
+                }
+                None => viewer.jump_by(1, |l, p| motion::matching_bracket(l, p).unwrap_or(p)),
+            },
+            FindForward | FindBackward | TillForward | TillBackward => {
+                self.finding = Some(action);
+                self.count = count;
+            }
+            RepeatFind | RepeatFindBack => {
+                if let Some(find) = self.last_find {
+                    let find = if action == RepeatFind {
+                        find
+                    } else {
+                        find.reversed()
+                    };
+                    viewer.go_by(1, |l, p| find.apply(l, p, n, true).unwrap_or(p));
+                }
+            }
+            JumpBack => viewer.back(),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Finishes an `f`, `F`, `t` or `T` with the character typed after it.
+    fn find_char(&mut self, action: Action, target: char, count: Option<usize>) {
+        let find = Find {
+            target,
+            forward: matches!(action, Action::FindForward | Action::TillForward),
+            till: matches!(action, Action::TillForward | Action::TillBackward),
+        };
+        self.last_find = Some(find);
+        if let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) {
+            let n = count.unwrap_or(1);
+            viewer.go_by(1, |l, p| find.apply(l, p, n, false).unwrap_or(p));
         }
     }
 
@@ -449,6 +566,20 @@ impl App {
             self.sidebar_cursor = i;
         }
         self.focus = Focus::Explorer;
+    }
+}
+
+/// The character a key types, if it types one: not with ctrl or alt held.
+fn typed_char(event: KeyEvent) -> Option<char> {
+    match event.code {
+        KeyCode::Char(c)
+            if !event
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+        {
+            Some(c)
+        }
+        _ => None,
     }
 }
 
@@ -707,6 +838,80 @@ mod tests {
         assert_eq!(scroll(&app), app.current_viewer().unwrap().height.get() / 2);
         press_drawn(&mut app, "ctrl-u k");
         assert_eq!(scroll(&app), 0);
+    }
+
+    /// The usual worktree with `path` open in the focused viewer.
+    fn viewing(path: &str) -> App {
+        let mut app = with_files();
+        app.viewers.insert(fake::current(), fake::viewer(path));
+        app.focus = Focus::Viewer;
+        app
+    }
+
+    fn cursor(app: &App) -> (usize, usize) {
+        let c = app.current_viewer().unwrap().cursor;
+        (c.line, c.col)
+    }
+
+    #[test]
+    fn counts_repeat_motions_and_pick_lines() {
+        let mut app = viewing("generated/rows.rs");
+        press_drawn(&mut app, "5 j");
+        assert_eq!(cursor(&app).0, 5);
+        press_drawn(&mut app, "1 2 G");
+        assert_eq!(cursor(&app).0, 11);
+        press_drawn(&mut app, "5 0 %");
+        assert_eq!(cursor(&app).0, 4_999, "halfway through 10,000 lines");
+        press_drawn(&mut app, "ctrl-o");
+        assert_eq!(cursor(&app).0, 11);
+        press_drawn(&mut app, "0");
+        assert_eq!(cursor(&app).1, 0, "a 0 with no count before it is a motion");
+        assert_eq!(app.count, None);
+    }
+
+    #[test]
+    fn h_and_l_move_the_cursor_through_text_and_esc_goes_back() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "l l l h");
+        assert_eq!((cursor(&app), app.focus), ((0, 2), Focus::Viewer));
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.focus, Focus::Explorer);
+    }
+
+    #[test]
+    fn f_finds_a_character_and_semicolon_and_comma_repeat_it() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "f ;");
+        assert_eq!(cursor(&app), (0, 36));
+        press_drawn(&mut app, ";");
+        assert_eq!(cursor(&app), (0, 55));
+        press_drawn(&mut app, ",");
+        assert_eq!(cursor(&app), (0, 36));
+        press_drawn(&mut app, "0 2 t ;");
+        assert_eq!(cursor(&app), (0, 54), "a count finds the second");
+    }
+
+    #[test]
+    fn a_count_waits_with_its_motion_and_esc_drops_it() {
+        let mut app = viewing("generated/rows.rs");
+        press_drawn(&mut app, "3 f");
+        assert_eq!(
+            (app.count, app.finding),
+            (Some(3), Some(Action::FindForward))
+        );
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!((app.count, app.finding), (None, None));
+        assert_eq!(app.focus, Focus::Viewer, "esc only cancelled the find");
+        press_drawn(&mut app, "4");
+        app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!((app.count, app.focus), (None, Focus::Viewer));
+    }
+
+    #[test]
+    fn digits_count_only_in_the_viewer() {
+        let mut app = with_files();
+        press_drawn(&mut app, "5");
+        assert_eq!(app.count, None);
     }
 
     #[test]

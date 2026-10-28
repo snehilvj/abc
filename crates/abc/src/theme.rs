@@ -23,6 +23,8 @@ pub struct Theme {
     pub border: Color,
     pub accent: Color,
     pub selection: Color,
+    /// The background of the viewer's line with the cursor.
+    pub cursor_line: Color,
     /// Text behind a dialog, or on screen while disconnected.
     pub faded: Color,
     pub ok: Color,
@@ -71,6 +73,7 @@ impl Theme {
             border: rgb(0x333e48),
             accent: rgb(0x4fc1d1),
             selection: rgb(0x1f3a44),
+            cursor_line: rgb(0x20272e),
             faded: rgb(0x343d45),
             ok: rgb(0x8cc56a),
             warning: rgb(0xe2b85a),
@@ -105,6 +108,7 @@ impl Theme {
             border: rgb(0xcdd5da),
             accent: rgb(0x0a7f8f),
             selection: rgb(0xdcecef),
+            cursor_line: rgb(0xeef2f4),
             faded: rgb(0xcdd3d7),
             ok: rgb(0x2a7531),
             warning: rgb(0x9a6400),
@@ -139,6 +143,7 @@ impl Theme {
             border: Color::DarkGray,
             accent: Color::Cyan,
             selection: Color::DarkGray,
+            cursor_line: Color::Reset,
             faded: Color::DarkGray,
             ok: Color::Green,
             warning: Color::Yellow,

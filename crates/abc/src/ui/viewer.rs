@@ -52,8 +52,8 @@ pub fn header<'a>(viewer: &Viewer, width: usize, focused: bool, theme: &Theme) -
     Line::from(spans)
 }
 
-/// The text, or a notice in its place, in `area`.
-pub fn draw(buf: &mut Buffer, area: Rect, viewer: Option<&Viewer>, theme: &Theme) {
+/// The text, or a notice in its place, in `area`. Focused, it shows the cursor.
+pub fn draw(buf: &mut Buffer, area: Rect, viewer: Option<&Viewer>, focused: bool, theme: &Theme) {
     let notice = |buf: &mut Buffer, lines: Vec<Vec<Span>>| {
         for (i, spans) in lines.into_iter().enumerate() {
             buf.set_line(
@@ -129,28 +129,66 @@ pub fn draw(buf: &mut Buffer, area: Rect, viewer: Option<&Viewer>, theme: &Theme
         Document::Text(text) => {
             let total = text.lines.len();
             let gutter = total.to_string().len().max(2);
-            let scroll = viewer.scroll.min(viewer.max_scroll());
-            for (row, index) in (scroll..total).take(area.height as usize).enumerate() {
+            let numbers = 1 + gutter + 2;
+            let x = area.x + numbers as u16;
+            // One column spare on the right.
+            let room = (area.width as usize).saturating_sub(numbers + 1);
+            let cursor = viewer.cursor;
+            let left = viewer.left(room);
+            for (row, index) in (viewer.top()..total).take(area.height as usize).enumerate() {
                 let y = area.y + row as u16;
+                let current = focused && index == cursor.line;
                 let number = format!(" {:>gutter$}  ", index + 1);
-                let x = area.x + number.chars().count() as u16;
-                buf.set_string(area.x, y, &number, theme.dim());
-                let room = area.width.saturating_sub(x - area.x + 1) as usize;
+                let number_style = if current { theme.text() } else { theme.dim() };
+                buf.set_string(area.x, y, &number, number_style);
+                if current {
+                    let line = Rect::new(x, y, room as u16, 1);
+                    buf.set_style(line, Style::new().bg(theme.cursor_line));
+                }
                 let spans = text
                     .spans
                     .as_ref()
                     .map(|s| s[index].as_slice())
                     .unwrap_or(&[]);
-                let line = styled(&text.lines[index], spans, theme);
+                let line = skip(styled(&text.lines[index], spans, theme), left);
                 if line.width() > room {
                     buf.set_line(x, y, &line, room.saturating_sub(1) as u16);
                     buf.set_string(x + room.saturating_sub(1) as u16, y, "…", theme.dim());
                 } else {
                     buf.set_line(x, y, &line, room as u16);
                 }
+                if current {
+                    let chars: Vec<char> = text.lines[index].chars().collect();
+                    let before = crate::viewer::width(
+                        &chars[left.min(cursor.col)..cursor.col.min(chars.len())],
+                    );
+                    if before < room {
+                        let cell = &mut buf[(x + before as u16, y)];
+                        cell.set_style(Style::new().add_modifier(Modifier::REVERSED));
+                    }
+                }
             }
         }
     }
+}
+
+/// `line` without its first `n` characters, for a view scrolled sideways.
+fn skip(line: Line<'_>, mut n: usize) -> Line<'_> {
+    if n == 0 {
+        return line;
+    }
+    let mut spans = Vec::new();
+    for span in line.spans {
+        let count = span.content.chars().count();
+        if n >= count {
+            n -= count;
+            continue;
+        }
+        let rest: String = span.content.chars().skip(n).collect();
+        n = 0;
+        spans.push(Span::styled(rest, span.style));
+    }
+    Line::from(spans)
 }
 
 /// One line, split into the default colour and its highlight spans.
@@ -181,7 +219,7 @@ pub fn range(viewer: &Viewer) -> Option<String> {
         return None;
     };
     let total = text.lines.len();
-    let first = viewer.scroll.min(viewer.max_scroll()) + 1;
+    let first = viewer.top() + 1;
     let last = (first - 1 + viewer.height.get()).min(total);
     Some(format!(
         "{}–{} of {}",
@@ -189,6 +227,17 @@ pub fn range(viewer: &Viewer) -> Option<String> {
         thousands(last),
         thousands(total)
     ))
+}
+
+/// Where the cursor is, as "line:column": "12:5".
+pub fn position(viewer: &Viewer) -> Option<String> {
+    viewer.has_text().then(|| {
+        format!(
+            "{}:{}",
+            thousands(viewer.cursor.line + 1),
+            viewer.cursor.col + 1
+        )
+    })
 }
 
 fn thousands(n: usize) -> String {
@@ -224,6 +273,16 @@ mod tests {
         assert_eq!(thousands(9967), "9,967");
         assert_eq!(thousands(10000), "10,000");
         assert_eq!(thousands(58), "58");
+    }
+
+    #[test]
+    fn a_line_scrolled_sideways_loses_its_first_characters() {
+        let line = Line::from(vec![Span::raw("fn"), Span::raw(" main"), Span::raw("()")]);
+        let parts =
+            |l: Line| -> Vec<String> { l.spans.iter().map(|s| s.content.to_string()).collect() };
+        assert_eq!(parts(skip(line.clone(), 4)), ["ain", "()"]);
+        assert_eq!(parts(skip(line.clone(), 2)), [" main", "()"]);
+        assert_eq!(parts(skip(line, 0)), ["fn", " main", "()"]);
     }
 
     #[test]

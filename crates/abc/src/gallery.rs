@@ -16,6 +16,7 @@ use crate::app::{App, Cmd, Connection, Entry, Focus, Msg, SidebarStyle, Status, 
 use crate::explorer::{Explorer, Listing};
 use crate::fake;
 use crate::highlight;
+use crate::motion::Pos;
 use crate::theme::{Theme, ThemeChoice};
 use crate::ui;
 use crate::viewer::{Document, Viewer};
@@ -239,7 +240,12 @@ pub fn viewer() -> Vec<Preset> {
     }
     let mut large = open("generated/rows.rs", &[]);
     if let Some(viewer) = large.viewers.get_mut(&fake::current()) {
-        viewer.scroll = usize::MAX;
+        viewer.go(Pos::new(usize::MAX, 0));
+    }
+    // The cursor near the end of a line longer than the viewer is wide.
+    let mut sideways = open("packages/integrations/gst/client.ts", &[]);
+    if let Some(viewer) = sideways.viewers.get_mut(&fake::current()) {
+        viewer.go(Pos::new(10, 52));
     }
     vec![
         preset("highlighted", open(verify, &[])),
@@ -254,6 +260,7 @@ pub fn viewer() -> Vec<Preset> {
             with_document(Document::Failed("permission denied".into())),
         ),
         preset("large", large),
+        preset("sideways", sideways),
     ]
 }
 

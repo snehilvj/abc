@@ -32,6 +32,36 @@ pub enum Action {
     PageUp,
     /// Try starting abcd again after it failed to start.
     Retry,
+    // The viewer's cursor, Vim style.
+    Left,
+    Right,
+    WordForward,
+    WordBackward,
+    WordEnd,
+    BigWordForward,
+    BigWordBackward,
+    BigWordEnd,
+    LineStart,
+    FirstNonBlank,
+    LineEnd,
+    ScreenTop,
+    ScreenMiddle,
+    ScreenBottom,
+    ScrollDown,
+    ScrollUp,
+    CursorLineTop,
+    CursorLineMiddle,
+    CursorLineBottom,
+    ParagraphForward,
+    ParagraphBackward,
+    MatchingBracket,
+    FindForward,
+    FindBackward,
+    TillForward,
+    TillBackward,
+    RepeatFind,
+    RepeatFindBack,
+    JumpBack,
 }
 
 impl FromStr for Action {
@@ -59,6 +89,35 @@ impl FromStr for Action {
             "page_down" => Self::PageDown,
             "page_up" => Self::PageUp,
             "retry" => Self::Retry,
+            "left" => Self::Left,
+            "right" => Self::Right,
+            "word_forward" => Self::WordForward,
+            "word_backward" => Self::WordBackward,
+            "word_end" => Self::WordEnd,
+            "big_word_forward" => Self::BigWordForward,
+            "big_word_backward" => Self::BigWordBackward,
+            "big_word_end" => Self::BigWordEnd,
+            "line_start" => Self::LineStart,
+            "first_non_blank" => Self::FirstNonBlank,
+            "line_end" => Self::LineEnd,
+            "screen_top" => Self::ScreenTop,
+            "screen_middle" => Self::ScreenMiddle,
+            "screen_bottom" => Self::ScreenBottom,
+            "scroll_down" => Self::ScrollDown,
+            "scroll_up" => Self::ScrollUp,
+            "cursor_line_top" => Self::CursorLineTop,
+            "cursor_line_middle" => Self::CursorLineMiddle,
+            "cursor_line_bottom" => Self::CursorLineBottom,
+            "paragraph_forward" => Self::ParagraphForward,
+            "paragraph_backward" => Self::ParagraphBackward,
+            "matching_bracket" => Self::MatchingBracket,
+            "find_forward" => Self::FindForward,
+            "find_backward" => Self::FindBackward,
+            "till_forward" => Self::TillForward,
+            "till_backward" => Self::TillBackward,
+            "repeat_find" => Self::RepeatFind,
+            "repeat_find_back" => Self::RepeatFindBack,
+            "jump_back" => Self::JumpBack,
             other => return Err(format!("unknown action {other:?}")),
         })
     }
@@ -230,18 +289,51 @@ impl Keymap {
             (Explorer, "shift-g", Last),
             (Explorer, "enter", Open),
             (Explorer, "o", Open),
+            (Viewer, "h", Left),
+            (Viewer, "left", Left),
             (Viewer, "j", Down),
             (Viewer, "down", Down),
             (Viewer, "k", Up),
             (Viewer, "up", Up),
+            (Viewer, "l", Right),
+            (Viewer, "right", Right),
+            (Viewer, "w", WordForward),
+            (Viewer, "b", WordBackward),
+            (Viewer, "e", WordEnd),
+            (Viewer, "shift-w", BigWordForward),
+            (Viewer, "shift-b", BigWordBackward),
+            (Viewer, "shift-e", BigWordEnd),
+            (Viewer, "0", LineStart),
+            (Viewer, "home", LineStart),
+            (Viewer, "^", FirstNonBlank),
+            (Viewer, "$", LineEnd),
+            (Viewer, "end", LineEnd),
             (Viewer, "ctrl-d", HalfPageDown),
             (Viewer, "ctrl-u", HalfPageUp),
             (Viewer, "ctrl-f", PageDown),
             (Viewer, "pagedown", PageDown),
             (Viewer, "ctrl-b", PageUp),
             (Viewer, "pageup", PageUp),
+            (Viewer, "ctrl-e", ScrollDown),
+            (Viewer, "ctrl-y", ScrollUp),
             (Viewer, "g g", First),
             (Viewer, "shift-g", Last),
+            (Viewer, "shift-h", ScreenTop),
+            (Viewer, "shift-m", ScreenMiddle),
+            (Viewer, "shift-l", ScreenBottom),
+            (Viewer, "z t", CursorLineTop),
+            (Viewer, "z z", CursorLineMiddle),
+            (Viewer, "z b", CursorLineBottom),
+            (Viewer, "}", ParagraphForward),
+            (Viewer, "{", ParagraphBackward),
+            (Viewer, "%", MatchingBracket),
+            (Viewer, "f", FindForward),
+            (Viewer, "shift-f", FindBackward),
+            (Viewer, "t", TillForward),
+            (Viewer, "shift-t", TillBackward),
+            (Viewer, ";", RepeatFind),
+            (Viewer, ",", RepeatFindBack),
+            (Viewer, "ctrl-o", JumpBack),
             (Viewer, "esc", FocusLeft),
         ];
         let mut map = Self::default();
@@ -442,6 +534,35 @@ mod tests {
             Feed::Action(Action::FocusLeft)
         );
         assert_eq!(feed_all(&map, Context::Sidebar, &[esc]), Feed::Ignored);
+    }
+
+    #[test]
+    fn the_viewer_moves_its_cursor_with_vim_keys() {
+        let map = Keymap::defaults();
+        let viewer = |keys: &[KeyCombination]| feed_all(&map, Context::Viewer, keys);
+        assert_eq!(viewer(&[ch('h')]), Feed::Action(Action::Left));
+        assert_eq!(viewer(&[ch('0')]), Feed::Action(Action::LineStart));
+        assert_eq!(viewer(&[ch('$')]), Feed::Action(Action::LineEnd));
+        assert_eq!(viewer(&[ch('{')]), Feed::Action(Action::ParagraphBackward));
+        assert_eq!(
+            viewer(&[ch('z'), ch('z')]),
+            Feed::Action(Action::CursorLineMiddle)
+        );
+        let shifted = |c| press(KeyCode::Char(c), KeyModifiers::SHIFT);
+        assert_eq!(
+            viewer(&[shifted('W')]),
+            Feed::Action(Action::BigWordForward)
+        );
+        assert_eq!(viewer(&[shifted('L')]), Feed::Action(Action::ScreenBottom));
+        assert_eq!(
+            viewer(&[shifted('%')]),
+            Feed::Action(Action::MatchingBracket)
+        );
+        // Outside the viewer, h and l still move between panes.
+        assert_eq!(
+            feed_all(&map, Context::Explorer, &[ch('h')]),
+            Feed::Action(Action::FocusLeft)
+        );
     }
 
     #[test]

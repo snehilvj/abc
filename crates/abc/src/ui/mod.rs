@@ -453,13 +453,18 @@ fn panes(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
     );
     let viewer = app.current_viewer();
     let viewer_area = Rect::new(g.d2 + 1, y0, g.cols.viewer, height);
-    viewer::draw(buf, viewer_area, viewer, theme);
+    let focused = app.focus == Focus::Viewer;
+    viewer::draw(buf, viewer_area, viewer, focused, theme);
     if let Some(v) = viewer {
         let width = g.cols.viewer.saturating_sub(3);
-        let header = viewer::header(v, width as usize, app.focus == Focus::Viewer, theme);
+        let header = viewer::header(v, width as usize, focused, theme);
         buf.set_line(g.d2 + 2, g.header_row(), &header, width);
         if let Some(range) = viewer::range(v) {
-            let range = format!(" {range} ");
+            // The cursor's place shows only while it does.
+            let range = match viewer::position(v).filter(|_| focused) {
+                Some(position) => format!(" {position} · {range} "),
+                None => format!(" {range} "),
+            };
             buf.set_string(
                 g.right - 1 - range.chars().count() as u16,
                 g.bottom - 2,
@@ -541,11 +546,22 @@ fn keybar_items(app: &App) -> Vec<(String, &'static str)> {
             ),
         ],
         Context::Viewer => vec![
-            (two(Down, Up), "scroll"),
+            (
+                format!("{} {} {} {}", one(Left), one(Down), one(Up), one(Right)),
+                "move",
+            ),
+            (
+                format!(
+                    "{} {} {}",
+                    one(WordForward),
+                    one(WordBackward),
+                    one(WordEnd)
+                ),
+                "words",
+            ),
             (two(HalfPageDown, HalfPageUp), "half page"),
-            (two(PageDown, PageUp), "page"),
             (two(First, Last), "top/end"),
-            (global(FocusLeft), "explorer"),
+            (one(FocusLeft), "explorer"),
         ],
     };
     items.push((leader, "commands"));
@@ -578,12 +594,9 @@ fn keybar(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
 
 /// The status line's message: an icon by kind, then the text, in one colour.
 fn status_message(app: &App, theme: &Theme) -> Option<(Option<&'static str>, String, Color)> {
-    if !app.pending.is_empty() {
-        return Some((
-            None,
-            format!("{} …", keys::Keys(app.pending.clone())),
-            theme.text,
-        ));
+    let typed = typed(app);
+    if !typed.is_empty() {
+        return Some((None, format!("{typed} …"), theme.text));
     }
     let message = |icon, text: &str, color| Some((Some(icon), text.to_string(), color));
     match &app.connection {
@@ -615,6 +628,22 @@ fn status_message(app: &App, theme: &Theme) -> Option<(Option<&'static str>, Str
             None => None,
         },
     }
+}
+
+/// What's typed towards a command that hasn't run yet, as Vim's showcmd
+/// shows it: a count, the start of a sequence, an `f` waiting for its character.
+fn typed(app: &App) -> String {
+    let mut parts = Vec::new();
+    if let Some(count) = app.count {
+        parts.push(count.to_string());
+    }
+    if !app.pending.is_empty() {
+        parts.push(keys::Keys(app.pending.clone()).to_string());
+    }
+    if let Some(action) = app.finding {
+        parts.push(key_label(app, Context::Viewer, action));
+    }
+    parts.join(" ")
 }
 
 fn status_line(buf: &mut Buffer, g: &Geometry, app: &App, theme: &Theme) {
