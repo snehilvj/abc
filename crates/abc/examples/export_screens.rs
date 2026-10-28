@@ -83,6 +83,7 @@ fn main() {
         ("switcher", Screen::Switcher),
         ("find", Screen::Find),
         ("add-repo", Screen::AddRepo),
+        ("remove-repo", Screen::RemoveRepo),
     ] {
         for preset in gallery::presets(screen) {
             dump(name, preset.name, &render(&preset.app, (120, 40), &theme));

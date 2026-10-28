@@ -36,6 +36,10 @@ pub enum Cmd {
         path: String,
         name: String,
     },
+    /// Forgets the repository named `name`; its files stay on disk.
+    RemoveRepo {
+        name: String,
+    },
     /// Finds `query` in the worktree's files; answers come as `Found`, then `SearchDone`.
     Search {
         worktree: PathBuf,
@@ -95,6 +99,14 @@ pub enum Msg {
         repos: Vec<Repo>,
     },
     AddFailed {
+        why: String,
+    },
+    /// A repository was removed; `repos` is the list without it.
+    RepoRemoved {
+        name: String,
+        repos: Vec<Repo>,
+    },
+    RemoveFailed {
         why: String,
     },
 }
@@ -174,6 +186,20 @@ pub enum PromptKind {
     Line,
 }
 
+/// The remove repository dialog: the repository asked about, and how removing it goes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoveRepo {
+    pub name: String,
+    pub stage: Removal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Removal {
+    Asking,
+    Removing,
+    Failed(String),
+}
+
 /// A row in the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Entry {
@@ -229,6 +255,8 @@ pub struct App {
     pub find_open: bool,
     /// The add repository dialog, while it's open; it takes every key.
     pub add_repo: Option<AddRepo>,
+    /// The remove repository dialog, while it's open.
+    pub remove_repo: Option<RemoveRepo>,
     /// Seconds since the Unix epoch, for "2h ago". The loop that runs the app keeps it current.
     pub now: u64,
     pub quit: bool,
@@ -268,6 +296,7 @@ impl App {
             find: find::Find::default(),
             find_open: false,
             add_repo: None,
+            remove_repo: None,
             now: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
@@ -328,6 +357,9 @@ impl App {
         }
         if self.add_repo.is_some() {
             return self.add_repo_key(event);
+        }
+        if self.remove_repo.is_some() {
+            return self.remove_repo_key(event);
         }
         if self.prompt.is_some() {
             return self.prompt_key(event);
@@ -420,6 +452,12 @@ impl App {
             Action::FindFile => self.open_switcher(Mode::Files),
             Action::FindInFiles => self.open_find(),
             Action::AddRepo => self.add_repo = Some(AddRepo::default()),
+            Action::RemoveRepo => {
+                self.remove_repo = self.repo_to_remove().map(|name| RemoveRepo {
+                    name,
+                    stage: Removal::Asking,
+                })
+            }
             Action::Down | Action::Up | Action::First | Action::Last | Action::Open
                 if self.context() == Context::Explorer =>
             {
@@ -957,6 +995,34 @@ impl App {
         }
     }
 
+    /// The repository `space r d` asks about: the one under the sidebar's
+    /// cursor while the sidebar has focus, otherwise the open worktree's.
+    fn repo_to_remove(&self) -> Option<String> {
+        let repo = match (self.context(), self.entry_at_cursor()) {
+            (Context::Sidebar, Some(Entry::Repo(r) | Entry::Worktree(r, _))) => &self.repos[r],
+            _ => self.current_worktree()?.0,
+        };
+        Some(repo.name.clone())
+    }
+
+    /// A key for the remove repository dialog: `y` removes, `n` and esc keep;
+    /// once removing has failed, esc closes.
+    fn remove_repo_key(&mut self, event: KeyEvent) {
+        let Some(remove) = self.remove_repo.as_mut() else {
+            return;
+        };
+        match (&remove.stage, event.code) {
+            (Removal::Asking, KeyCode::Char('y')) => {
+                remove.stage = Removal::Removing;
+                let name = remove.name.clone();
+                self.outbox.push(Cmd::RemoveRepo { name });
+            }
+            (Removal::Asking, KeyCode::Char('n') | KeyCode::Esc)
+            | (Removal::Failed(_), KeyCode::Esc) => self.remove_repo = None,
+            _ => {}
+        }
+    }
+
     /// Text pasted into the terminal goes into whatever is being typed: a
     /// dialog's field, a palette's query or a prompt. Its first line only,
     /// without control characters.
@@ -1167,8 +1233,52 @@ impl App {
                     add.stage = Stage::Failed(why);
                 }
             }
+            Msg::RepoRemoved { name, repos } => {
+                self.repos = repos;
+                self.remove_repo = None;
+                self.forget_removed();
+                self.status = Some(Status::new(StatusKind::Ok, format!("removed {name}")));
+            }
+            Msg::RemoveFailed { why } => {
+                if let Some(remove) = &mut self.remove_repo {
+                    remove.stage = Removal::Failed(why);
+                }
+            }
             Msg::SearchDone { id, capped } => self.find.done(id, capped),
             Msg::SearchFailed { id, why } => self.find.failed(id, why),
+        }
+    }
+
+    /// Lets go of worktrees no longer in any repository. If the open one went,
+    /// the last one opens, as `tab` would; the sidebar's cursor stays where it
+    /// was, on the nearest row left.
+    fn forget_removed(&mut self) {
+        let gone = |app: &Self, p: &Path| app.find(p).is_none();
+        let paths = self.listings.keys().chain(self.viewers.keys()).cloned();
+        let paths: Vec<PathBuf> = paths.filter(|p| gone(self, p)).collect();
+        for path in &paths {
+            self.listings.remove(path);
+            self.viewers.remove(path);
+        }
+        if self.last.as_deref().is_some_and(|p| gone(self, p)) {
+            self.last = None;
+        }
+        let cursor = self.sidebar_cursor;
+        let focus = self.focus;
+        if self.current.as_deref().is_some_and(|p| gone(self, p)) {
+            self.current = None;
+            match self.last.take() {
+                Some(last) => self.open(&last),
+                None => self.focus = Focus::Sidebar,
+            }
+        }
+        if focus == Focus::Sidebar || self.current.is_none() {
+            self.focus = Focus::Sidebar;
+            self.sidebar_cursor = self
+                .selectable()
+                .find(|&i| i >= cursor)
+                .or_else(|| self.selectable().last())
+                .unwrap_or(0);
         }
     }
 
@@ -2096,6 +2206,118 @@ mod tests {
         type_text(&mut app, "ecourts-work");
         key(&mut app, KeyCode::Enter);
         assert_eq!(app.outbox.len(), 1, "a free name");
+    }
+
+    /// abcd's answer to removing a repository: the list without it.
+    fn answer_remove(app: &mut App) {
+        for cmd in std::mem::take(&mut app.outbox) {
+            let Cmd::RemoveRepo { name } = cmd else {
+                panic!("not asked of the dialog: {cmd:?}");
+            };
+            let repos = app.repos.iter().filter(|r| r.name != name).cloned();
+            let repos = repos.collect();
+            app.apply(Msg::RepoRemoved { name, repos });
+        }
+    }
+
+    fn removing(app: &App) -> &RemoveRepo {
+        app.remove_repo.as_ref().expect("the dialog is open")
+    }
+
+    #[test]
+    fn space_r_d_asks_before_removing_the_repo_under_the_sidebar_cursor() {
+        let mut app = with_files();
+        press(&mut app, "h j j j j");
+        assert_eq!(app.entry_at_cursor(), Some(Entry::Worktree(1, 0)));
+        press(&mut app, "space r d");
+        assert_eq!(
+            removing(&app),
+            &RemoveRepo {
+                name: "ecourts".into(),
+                stage: Removal::Asking
+            }
+        );
+        press(&mut app, "n");
+        assert!(app.remove_repo.is_none() && app.outbox.is_empty(), "kept");
+        press(&mut app, "space r d y");
+        assert_eq!(
+            app.outbox,
+            [Cmd::RemoveRepo {
+                name: "ecourts".into()
+            }]
+        );
+        assert_eq!(removing(&app).stage, Removal::Removing);
+        answer_remove(&mut app);
+        assert!(app.remove_repo.is_none());
+        assert_eq!(status(&app), "removed ecourts");
+        let names: Vec<&str> = app.repos.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, ["privue-platform"]);
+        assert_eq!(app.current, Some(fake::current()), "still open");
+        assert_eq!(
+            app.entry_at_cursor(),
+            Some(Entry::Worktree(0, 3)),
+            "the cursor stays on a row"
+        );
+    }
+
+    #[test]
+    fn elsewhere_it_removes_the_open_worktrees_repo_and_goes_back_to_the_last() {
+        let mut app = with_files();
+        let lookup = PathBuf::from("~/code/wt/ecourts/gst-lookup");
+        app.open(&lookup);
+        app.open(&fake::current());
+        press(&mut app, "l space r d");
+        assert_eq!(removing(&app).name, "privue-platform");
+        press(&mut app, "y");
+        answer_remove(&mut app);
+        assert_eq!(app.current, Some(lookup), "as tab would");
+        assert_eq!((app.last.as_ref(), app.focus), (None, Focus::Explorer));
+        assert!(
+            app.listings.keys().all(|p| app.find(p).is_some()),
+            "its worktrees' files forgotten"
+        );
+    }
+
+    #[test]
+    fn removing_every_repository_leaves_nothing_open() {
+        let mut app = with_files();
+        press(&mut app, "space r d y");
+        answer_remove(&mut app);
+        assert_eq!((app.current.as_ref(), app.focus), (None, Focus::Sidebar));
+        press(&mut app, "space r d y");
+        answer_remove(&mut app);
+        assert!(app.repos.is_empty());
+        press(&mut app, "space r d");
+        assert!(app.remove_repo.is_none(), "nothing to remove");
+    }
+
+    #[test]
+    fn a_missing_repo_is_removed_from_its_own_row() {
+        let mut app = app();
+        app.repos = fake::repos_with_variants();
+        app.focus = Focus::Sidebar;
+        app.handle_key(KeyEvent::new(KeyCode::Char('G'), KeyModifiers::SHIFT));
+        press(&mut app, "space r d");
+        assert_eq!(removing(&app).name, "old-scraper");
+    }
+
+    #[test]
+    fn a_failed_removal_says_why_until_esc() {
+        let mut app = with_files();
+        press(&mut app, "space r d y");
+        app.outbox.clear();
+        app.apply(Msg::RemoveFailed {
+            why: "not connected".into(),
+        });
+        assert_eq!(
+            removing(&app).stage,
+            Removal::Failed("not connected".into())
+        );
+        press(&mut app, "y n");
+        assert!(app.outbox.is_empty(), "only esc, as the footer says");
+        key(&mut app, KeyCode::Esc);
+        assert!(app.remove_repo.is_none());
+        assert_eq!(app.repos.len(), 2);
     }
 
     #[test]

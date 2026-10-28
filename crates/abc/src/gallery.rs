@@ -36,6 +36,7 @@ pub enum Screen {
     /// Find in files.
     Find,
     AddRepo,
+    RemoveRepo,
     /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
     Icons,
     /// Panics on the first key, to check the terminal comes back clean.
@@ -81,6 +82,7 @@ pub fn presets(screen: Screen) -> Vec<Preset> {
         Screen::Switcher => switcher(),
         Screen::Find => find(),
         Screen::AddRepo => add_repo(),
+        Screen::RemoveRepo => remove_repo(),
         Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
@@ -402,6 +404,38 @@ pub fn add_repo() -> Vec<Preset> {
     ]
 }
 
+/// The remove repository dialog's states, opened with `space r d`.
+pub fn remove_repo() -> Vec<Preset> {
+    let asking = |mut app: App, entry: Entry| {
+        cursor_on(&mut app, entry);
+        typed(app, " rd")
+    };
+    let ecourts = || asking(connected(fake::repos()), Entry::Worktree(1, 0));
+    let mut removing = typed(ecourts(), "y");
+    removing.outbox.clear();
+    let mut failed = removing.clone();
+    failed.apply(Msg::RemoveFailed {
+        why: "not connected".into(),
+    });
+    // The open worktree's repo, from the explorer, with an ecourts worktree opened before it.
+    let open = {
+        let mut app = connected(fake::repos());
+        app.open(&fake::repos()[1].worktrees()[0].path);
+        app.open(&fake::current());
+        typed(app, " rd")
+    };
+    let missing = asking(connected(fake::repos_with_variants()), Entry::Repo(2));
+    vec![
+        preset("confirm", ecourts()),
+        preset("removing", removing),
+        preset("error", failed),
+        preset("removed", settled(typed(ecourts(), "y"))),
+        preset("open", open.clone()),
+        preset("open-removed", settled(typed(open, "y"))),
+        preset("missing", missing),
+    ]
+}
+
 /// abcd's answer to a repository command, from the fake disk and host.
 fn answer_repo(app: &App, cmd: &Cmd) -> Msg {
     match cmd {
@@ -418,6 +452,15 @@ fn answer_repo(app: &App, cmd: &Cmd) -> Msg {
                 repos,
             }
         }
+        Cmd::RemoveRepo { name } => Msg::RepoRemoved {
+            name: name.clone(),
+            repos: app
+                .repos
+                .iter()
+                .filter(|r| &r.name != name)
+                .cloned()
+                .collect(),
+        },
         other => unreachable!("not a repository command: {other:?}"),
     }
 }
@@ -468,7 +511,7 @@ fn settled(mut app: App) -> App {
                     app.apply(Msg::Found { id, files });
                     app.apply(Msg::SearchDone { id, capped });
                 }
-                cmd @ (Cmd::CheckRepo { .. } | Cmd::AddRepo { .. }) => {
+                cmd @ (Cmd::CheckRepo { .. } | Cmd::AddRepo { .. } | Cmd::RemoveRepo { .. }) => {
                     let msg = answer_repo(&app, &cmd);
                     app.apply(msg);
                 }
@@ -528,7 +571,7 @@ fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
                         let _ = tx.send(Msg::SearchDone { id, capped });
                     });
                 }
-                cmd @ (Cmd::CheckRepo { .. } | Cmd::AddRepo { .. }) => {
+                cmd @ (Cmd::CheckRepo { .. } | Cmd::AddRepo { .. } | Cmd::RemoveRepo { .. }) => {
                     let msg = answer_repo(app, &cmd);
                     app.apply(msg);
                 }
@@ -576,7 +619,8 @@ pub fn run(args: Args) -> Result<()> {
         | Screen::Viewer
         | Screen::Switcher
         | Screen::Find
-        | Screen::AddRepo => {}
+        | Screen::AddRepo
+        | Screen::RemoveRepo => {}
     }
     let presets = presets(args.screen);
     let names = || {

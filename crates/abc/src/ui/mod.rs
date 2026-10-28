@@ -6,6 +6,7 @@ pub mod dialog;
 pub mod explorer;
 pub mod find;
 pub mod label;
+pub mod remove_repo;
 pub mod sidebar;
 pub mod switcher;
 pub mod viewer;
@@ -67,6 +68,10 @@ pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     if let Some(add) = &app.add_repo {
         fade(buf, area, theme);
         add_repo::draw(buf, area, app, add, theme);
+    }
+    if let Some(remove) = &app.remove_repo {
+        fade(buf, area, theme);
+        remove_repo::draw(buf, area, app, remove, theme);
     }
 }
 
