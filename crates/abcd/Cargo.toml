@@ -11,6 +11,7 @@ publish.workspace = true
 abc-core.workspace = true
 anyhow.workspace = true
 clap.workspace = true
+ignore.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

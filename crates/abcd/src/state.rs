@@ -223,6 +223,16 @@ impl State {
         })
     }
 
+    /// Whether `worktree` is a worktree of an added repository, still there.
+    pub async fn knows(&self, worktree: &Path) -> bool {
+        let inner = self.inner.lock().await;
+        inner
+            .repos
+            .iter()
+            .flat_map(|r| r.worktrees())
+            .any(|w| w.path == worktree && !w.missing)
+    }
+
     /// A client opened `worktree` at `now`, seconds since the Unix epoch.
     pub async fn visit(&self, worktree: &Path, now: u64) -> Result<Done, Failure> {
         let mut inner = self.inner.lock().await;

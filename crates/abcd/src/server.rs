@@ -5,13 +5,13 @@ use std::fs::{self, DirBuilder, File, TryLockError};
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use abc_core::paths::Paths;
 use abc_core::protocol::{
-    Call, Done, ErrorCode, Failure, Hello, HelloLine, Repos, Request, Response, ServerStatus,
-    encode,
+    Call, Done, ErrorCode, Event, Failure, Files, Hello, HelloLine, Repos, Request, Response,
+    SearchDone, ServerStatus, encode,
 };
 use abc_core::settings::Settings;
 use anyhow::{Context as _, bail};
@@ -22,6 +22,7 @@ use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::{Notify, broadcast, mpsc};
 use tracing::{info, warn};
 
+use crate::files::{self, Unreadable};
 use crate::state::State;
 
 /// How often abcd checks its socket is still there.
@@ -40,6 +41,8 @@ struct Server {
     /// Notified when a client asks abcd to stop.
     stop: Notify,
     state: State,
+    /// Files larger than this aren't read or searched (`viewer.max_file_size_mb`).
+    file_limit: u64,
 }
 
 /// Serves the profile until asked to stop, signalled, or its socket goes.
@@ -107,6 +110,7 @@ pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<(
         clients: AtomicUsize::new(0),
         stop: Notify::new(),
         state,
+        file_limit: settings.viewer.max_file_size_mb * 1024 * 1024,
     });
     let mut term = signal(SignalKind::terminate())?;
     let mut interrupt = signal(SignalKind::interrupt())?;
@@ -194,6 +198,8 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
     }
     let _client = Client::new(&server.clients);
     let mut subscription: Option<Subscription> = None;
+    // The running search's cancel flag: a new search stops the last.
+    let mut searching: Option<Arc<AtomicBool>> = None;
 
     // Responses, and later events, go out through one writer.
     let (out, mut outgoing) = mpsc::unbounded_channel::<String>();
@@ -222,6 +228,25 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
                 continue;
             }
         };
+        if let Call::Search {
+            worktree,
+            query,
+            max_lines,
+        } = request.call
+        {
+            let cancel = Arc::new(AtomicBool::new(false));
+            if let Some(last) = searching.replace(cancel.clone()) {
+                last.store(true, Ordering::Relaxed);
+            }
+            let search = Search {
+                id: request.id,
+                worktree,
+                query,
+                max_lines,
+            };
+            tokio::spawn(search.run(server.clone(), cancel, out.clone()));
+            continue;
+        }
         let stop = request.call == Call::ServerShutdown;
         if request.call == Call::Subscribe && subscription.is_none() {
             subscription = Some(Subscription::start(&server.state, out.clone()));
@@ -235,7 +260,10 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
             return;
         }
     }
-    // The subscription holds a sender too: end it so the writer can finish.
+    // The subscription and searches hold senders too: end them so the writer can finish.
+    if let Some(search) = searching {
+        search.store(true, Ordering::Relaxed);
+    }
     drop((subscription, out));
     let _ = writer.await;
 }
@@ -311,11 +339,95 @@ async fn answer(server: &Server, request: Request) -> Response {
         Call::RepoAdd { path, name } => reply(id, state.add(&path, name).await),
         Call::RepoRemove { name } => reply(id, state.remove(&name).await),
         Call::WorktreeVisit { worktree } => reply(id, state.visit(&worktree, now()).await),
-        other => Response::error(
-            id,
-            ErrorCode::BadRequest,
-            format!("this abcd can't answer {other:?} yet"),
-        ),
+        Call::WorktreeFiles { worktree } => {
+            if !state.knows(&worktree).await {
+                return unknown_worktree(id, &worktree);
+            }
+            let files = tokio::task::spawn_blocking(move || files::list(&worktree)).await;
+            Response::ok(
+                id,
+                &Files {
+                    files: files.unwrap_or_default(),
+                },
+            )
+        }
+        Call::FileRead { worktree, path } => {
+            if !state.knows(&worktree).await {
+                return unknown_worktree(id, &worktree);
+            }
+            let limit = server.file_limit;
+            let shown = path.clone();
+            let read =
+                tokio::task::spawn_blocking(move || files::read(&worktree, &path, limit)).await;
+            match read {
+                Ok(Ok(contents)) => Response::ok(id, &contents),
+                Ok(Err(Unreadable::Outside)) => Response::error(
+                    id,
+                    ErrorCode::BadRequest,
+                    format!("{shown} is outside the worktree"),
+                ),
+                Ok(Err(Unreadable::Io(why))) => Response::error(id, ErrorCode::Io, why),
+                Err(e) => Response::error(id, ErrorCode::Io, e.to_string()),
+            }
+        }
+        // Run apart, in `serve`, so a search never holds up other requests.
+        Call::Search { .. } => Response::error(id, ErrorCode::BadRequest, "search runs apart"),
+    }
+}
+
+fn unknown_worktree(id: u64, worktree: &Path) -> Response {
+    Response::error(
+        id,
+        ErrorCode::NotFound,
+        format!("no worktree at {}", worktree.display()),
+    )
+}
+
+/// A search one connection asked for.
+struct Search {
+    id: u64,
+    worktree: PathBuf,
+    query: String,
+    max_lines: usize,
+}
+
+impl Search {
+    /// Finds the query in the worktree's files, sending what it finds as
+    /// `search.found` events, a file at a time, then the response.
+    async fn run(
+        self,
+        server: Arc<Server>,
+        cancel: Arc<AtomicBool>,
+        out: mpsc::UnboundedSender<String>,
+    ) {
+        let id = self.id;
+        if !server.state.knows(&self.worktree).await {
+            let _ = out.send(encode(&unknown_worktree(id, &self.worktree)));
+            return;
+        }
+        let limit = server.file_limit;
+        let events = out.clone();
+        let capped = tokio::task::spawn_blocking(move || {
+            let files = files::list(&self.worktree);
+            files::search(
+                &self.worktree,
+                &files,
+                &self.query,
+                self.max_lines,
+                limit,
+                &cancel,
+                |file| {
+                    let found = Event::SearchFound {
+                        search: id,
+                        files: vec![file],
+                    };
+                    let _ = events.send(encode(&found));
+                },
+            )
+        })
+        .await
+        .unwrap_or(false);
+        let _ = out.send(encode(&Response::ok(id, &SearchDone { capped })));
     }
 }
 
