@@ -10,7 +10,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use abc_core::paths::Paths;
 use abc_core::protocol::{
-    Call, Done, ErrorCode, Hello, HelloLine, PROTOCOL, Request, Response, ServerStatus, encode,
+    Call, Done, ErrorCode, Hello, HelloLine, Request, Response, ServerStatus, encode,
 };
 use anyhow::{Context as _, bail};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -27,6 +27,7 @@ const LOCK_WAIT: Duration = Duration::from_millis(500);
 /// What every connection shares.
 struct Server {
     build: String,
+    protocol: u32,
     profile: String,
     /// Seconds since the Unix epoch.
     started: u64,
@@ -36,7 +37,7 @@ struct Server {
 }
 
 /// Serves the profile until asked to stop, signalled, or its socket goes.
-pub async fn run(paths: Paths, build: String) -> anyhow::Result<()> {
+pub async fn run(paths: Paths, build: String, protocol: u32) -> anyhow::Result<()> {
     DirBuilder::new()
         .recursive(true)
         .mode(0o700)
@@ -74,6 +75,7 @@ pub async fn run(paths: Paths, build: String) -> anyhow::Result<()> {
 
     let server = Arc::new(Server {
         build,
+        protocol,
         profile: paths.profile.name().into(),
         started: SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -139,7 +141,7 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
     let mut lines = BufReader::new(read).lines();
     let hello = HelloLine {
         hello: Hello {
-            protocol: PROTOCOL,
+            protocol: server.protocol,
             build: server.build.clone(),
             pid: Some(std::process::id()),
             profile: Some(server.profile.clone()),
@@ -153,7 +155,7 @@ async fn serve(stream: UnixStream, server: Arc<Server>) {
         _ => return,
     };
     match theirs {
-        Some(HelloLine { hello }) if hello.protocol == PROTOCOL => {}
+        Some(HelloLine { hello }) if hello.protocol == server.protocol => {}
         other => {
             info!("hanging up on a client that said {other:?}");
             return;

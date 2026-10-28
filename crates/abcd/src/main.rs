@@ -6,6 +6,7 @@ mod server;
 
 use abc_core::build::BUILD_ID;
 use abc_core::paths::{Paths, Profile};
+use abc_core::protocol::PROTOCOL;
 use anyhow::Context as _;
 use clap::Parser;
 
@@ -25,6 +26,9 @@ struct Args {
     /// Say this build id instead of its own, to test what clients do about a stale server.
     #[arg(long, hide = true)]
     build_id: Option<String>,
+    /// Say this protocol instead of its own, likewise.
+    #[arg(long, hide = true)]
+    protocol: Option<u32>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -38,5 +42,5 @@ fn main() -> anyhow::Result<()> {
     let build = args.build_id.unwrap_or_else(|| BUILD_ID.into());
     tokio::runtime::Runtime::new()
         .context("starting the runtime")?
-        .block_on(server::run(paths, build))
+        .block_on(server::run(paths, build, args.protocol.unwrap_or(PROTOCOL)))
 }

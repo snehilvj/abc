@@ -177,7 +177,8 @@ pub async fn start(
     let sibling = sibling_build(abcd)?;
     if sibling != client.server.build {
         let from = client.server.build.clone();
-        stop(client, &socket).await;
+        stop(&client.server, &socket).await;
+        drop(client);
         let client = launch(paths, abcd, me).await?;
         return judge(client, me, Some(from));
     }
@@ -248,14 +249,32 @@ async fn launch(paths: &Paths, abcd: &Path, me: &Hello) -> Result<Client, StartE
     }
 }
 
-/// Asks abcd to stop and waits until its socket is gone.
-async fn stop(client: Client, socket: &Path) {
-    let _ = client
-        .call::<crate::protocol::Done>(Call::ServerShutdown)
-        .await;
-    drop(client);
+/// Stops the abcd that said `hello` and waits until its socket is gone. A
+/// SIGTERM to the pid in its hello, which never changes shape, so this works
+/// on an abcd of any protocol.
+async fn stop(hello: &Hello, socket: &Path) {
+    if let Some(pid) = hello.pid {
+        let _ = Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status();
+    }
     let deadline = tokio::time::Instant::now() + START_TIMEOUT;
     while socket.exists() && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(RETRY).await;
     }
+}
+
+/// Stops the profile's abcd if it's running, and says which process it was.
+pub async fn stop_running(paths: &Paths) -> Option<u32> {
+    let socket = paths.socket();
+    let client = Client::connect(&socket, &hello()).await.ok()?;
+    stop(&client.server, &socket).await;
+    client.server.pid
+}
+
+/// Stops the profile's abcd if it's running, then starts `abcd`.
+pub async fn restart(paths: &Paths, abcd: &Path, me: &Hello) -> Result<Client, StartError> {
+    stop_running(paths).await;
+    launch(paths, abcd, me).await
 }

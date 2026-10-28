@@ -116,6 +116,54 @@ async fn a_stale_abcd_is_restarted() {
 }
 
 #[tokio::test]
+async fn a_stale_abcd_of_another_protocol_is_restarted_too() {
+    let home = home();
+    let paths = paths(home.path());
+    let mut old_abcd = Command::new(abcd())
+        .args(["--profile", "test", "--build-id", "0.0.0+0ddba11"])
+        .args(["--protocol", &(PROTOCOL + 1).to_string()])
+        .env("XDG_STATE_HOME", paths.state_home())
+        .env("XDG_CONFIG_HOME", paths.config_home())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    while !paths.socket().exists() {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let (client, startup) = client::start(&paths, abcd(), &client::hello())
+        .await
+        .unwrap();
+    assert_eq!(
+        startup,
+        Startup::Restarted {
+            from: "0.0.0+0ddba11".into()
+        }
+    );
+    assert_eq!(client.server.protocol, PROTOCOL);
+    assert!(old_abcd.wait().unwrap().success());
+    shut_down(client).await;
+}
+
+#[tokio::test]
+async fn restart_and_stop_work_whether_or_not_abcd_runs() {
+    let home = home();
+    let paths = paths(home.path());
+    assert_eq!(client::stop_running(&paths).await, None, "nothing to stop");
+    let first = client::restart(&paths, abcd(), &client::hello())
+        .await
+        .unwrap();
+    let first_pid = pid(&first).await;
+    let second = client::restart(&paths, abcd(), &client::hello())
+        .await
+        .unwrap();
+    assert_ne!(pid(&second).await, first_pid);
+    assert_eq!(client::stop_running(&paths).await, second.server.pid);
+    assert!(!paths.socket().exists());
+}
+
+#[tokio::test]
 async fn a_stale_client_carries_on_without_restarting_abcd() {
     let home = home();
     let paths = paths(home.path());
