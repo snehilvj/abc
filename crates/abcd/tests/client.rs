@@ -215,3 +215,25 @@ async fn calls_from_many_tasks_get_their_own_answers() {
     let client = std::sync::Arc::try_unwrap(client).ok().unwrap();
     shut_down(client).await;
 }
+
+#[tokio::test]
+async fn reconnecting_reuses_abcd_or_starts_one_but_never_restarts_it() {
+    let home = home();
+    let paths = paths(home.path());
+    let (first, _) = client::start(&paths, abcd(), &client::hello())
+        .await
+        .unwrap();
+    let again = client::reconnect(&paths, abcd(), &client::hello())
+        .await
+        .unwrap();
+    assert_eq!(pid(&again).await, pid(&first).await, "the one running");
+    let stale = me(PROTOCOL, "0.0.0+01dc11e7");
+    let same = client::reconnect(&paths, abcd(), &stale).await.unwrap();
+    assert_eq!(same.server.pid, first.server.pid, "even for another build");
+    client::stop_running(&paths).await;
+    let started = client::reconnect(&paths, abcd(), &client::hello())
+        .await
+        .unwrap();
+    assert_ne!(started.server.pid, first.server.pid, "started afresh");
+    shut_down(started).await;
+}

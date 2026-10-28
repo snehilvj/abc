@@ -95,7 +95,16 @@ impl Client {
 
     /// Asks abcd, and waits for its answer as `T`.
     pub async fn call<T: DeserializeOwned>(&self, call: Call) -> Result<T, Failure> {
-        let id = self.next.fetch_add(1, Ordering::SeqCst);
+        self.call_as(self.reserve(), call).await
+    }
+
+    /// An id for a request not made yet, to know it before its events arrive.
+    pub fn reserve(&self) -> u64 {
+        self.next.fetch_add(1, Ordering::SeqCst)
+    }
+
+    /// Asks abcd under `id`, from [`Client::reserve`], and waits for its answer.
+    pub async fn call_as<T: DeserializeOwned>(&self, id: u64, call: Call) -> Result<T, Failure> {
         let (answer, answered) = oneshot::channel();
         self.pending.lock().unwrap().insert(id, answer);
         let line = encode(&Request { id, call });
@@ -262,6 +271,16 @@ async fn stop(hello: &Hello, socket: &Path) {
     let deadline = tokio::time::Instant::now() + START_TIMEOUT;
     while socket.exists() && tokio::time::Instant::now() < deadline {
         tokio::time::sleep(RETRY).await;
+    }
+}
+
+/// Connects again after the connection dropped: to the abcd running, or one
+/// started if none is. Never restarts one, so two builds never take turns
+/// stopping each other.
+pub async fn reconnect(paths: &Paths, abcd: &Path, me: &Hello) -> Result<Client, StartError> {
+    match Client::connect(&paths.socket(), me).await {
+        Ok(client) => Ok(client),
+        Err(_) => launch(paths, abcd, me).await,
     }
 }
 
