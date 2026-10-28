@@ -18,10 +18,10 @@ expression: screen
 │     gst-lookup               #88   │     scoring                         │ 11   await fetch(`${this.base}/gstin/… │
 │       feat/gst-lookup           4  │     shared                          │ 12  tus === 404) return undefined      │
 │     ocr-retry                        │   .gitignore                        │ 13  sponse.json()) as Record           │
-│       feat/ocr-retry      7  local │   package.json                      │ 14                                     │
-│       ecourts                       │   README.md                         │ 15                                     │
-│       main                      3  │   tsconfig.json                     │ 16                                     │
-│                                      │                                      │                                        │
+│       feat/ocr-retry      7  local │   LICENSE                           │ 14                                     │
+│       ecourts                       │   package.json                      │ 15                                     │
+│       main                      3  │   README.md                         │ 16                                     │
+│                                      │   tsconfig.json                     │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │

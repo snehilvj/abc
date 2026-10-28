@@ -286,7 +286,7 @@ pub fn viewer() -> Vec<Preset> {
         preset("pending", pending),
         preset("none", none),
         preset("loading", with_document(Document::Loading)),
-        preset("plain", open("README.md", &[])),
+        preset("plain", open("LICENSE", &[])),
         preset("binary", open("docs/logo.png", &[])),
         preset("too-large", open("data/dump.sql", &[])),
         preset(

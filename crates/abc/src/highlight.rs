@@ -1,9 +1,14 @@
-//! Syntax highlighting with tree-sitter, for Rust, TypeScript, TSX and Python.
-//! A file is highlighted once, off the UI thread, into spans per line; the
-//! viewer draws only the lines on screen from them.
+//! Syntax highlighting: tree-sitter for the languages abc has grammars for
+//! (Rust, TypeScript, TSX, JavaScript, Python), and bat's syntax definitions,
+//! through syntect, for every other kind of file they know (ADR 0006). A file
+//! is highlighted once, off the UI thread, into spans per line; the viewer
+//! draws only the lines on screen from them.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
+use syntect::parsing::{ParseState, Scope, ScopeStack, SyntaxSet};
+use syntect::util::LinesWithEndings;
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -11,15 +16,27 @@ pub enum Lang {
     Rust,
     TypeScript,
     Tsx,
+    /// JSX included.
+    JavaScript,
     Python,
+    /// One of bat's syntaxes, by name: "Markdown", "TOML", "HTML (Jinja2)", ...
+    Syntax(&'static str),
     /// Anything else: shown in the default colour.
     Plain,
 }
 
+/// Files named for their language rather than by an extension bat knows.
+const NAMED: &[(&str, &str)] = &[
+    ("Cargo.lock", "TOML"),
+    ("poetry.lock", "TOML"),
+    ("uv.lock", "TOML"),
+];
+
 impl Lang {
     /// The language of a file, by its name.
     pub fn of(name: &str) -> Self {
-        match name
+        let file = name.rsplit('/').next().unwrap_or(name);
+        match file
             .rsplit_once('.')
             .map(|(_, ext)| ext.to_ascii_lowercase())
             .as_deref()
@@ -27,21 +44,86 @@ impl Lang {
             Some("rs") => Self::Rust,
             Some("ts" | "mts" | "cts") => Self::TypeScript,
             Some("tsx") => Self::Tsx,
+            Some("js" | "mjs" | "cjs" | "jsx") => Self::JavaScript,
             Some("py" | "pyi") => Self::Python,
-            _ => Self::Plain,
+            _ => syntax_for(file).map_or(Self::Plain, Self::Syntax),
         }
     }
 
-    /// As the viewer's header shows it.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Rust => "rust",
-            Self::TypeScript => "ts",
-            Self::Tsx => "tsx",
-            Self::Python => "python",
-            Self::Plain => "plain",
+    /// The language of a file by its name and text: a shebang names a
+    /// script's, and an HTML file with Jinja's tags is Jinja.
+    pub fn detect(name: &str, text: &str) -> Self {
+        match Self::of(name) {
+            Self::Plain => {
+                let first = text.lines().next().unwrap_or("");
+                syntaxes()
+                    .find_syntax_by_first_line(first)
+                    .filter(|s| s.name != "Plain Text")
+                    .map_or(Self::Plain, |s| Self::Syntax(intern(&s.name)))
+            }
+            Self::Syntax("HTML") if jinja(text) => Self::Syntax("HTML (Jinja2)"),
+            lang => lang,
         }
     }
+
+    /// As the viewer's header shows it: short, such as "bash" for "Bourne
+    /// Again Shell (bash)".
+    pub fn label(self) -> String {
+        match self {
+            Self::Rust => "rust".into(),
+            Self::TypeScript => "ts".into(),
+            Self::Tsx => "tsx".into(),
+            Self::JavaScript => "js".into(),
+            Self::Python => "python".into(),
+            Self::Syntax(name) => {
+                let short = name
+                    .split_once(" (")
+                    .and_then(|(_, inner)| inner.strip_suffix(')'))
+                    .unwrap_or(name);
+                short.to_lowercase()
+            }
+            Self::Plain => "plain".into(),
+        }
+    }
+}
+
+/// bat's syntaxes, loaded once.
+fn syntaxes() -> &'static SyntaxSet {
+    static SET: OnceLock<SyntaxSet> = OnceLock::new();
+    SET.get_or_init(two_face::syntax::extra_newlines)
+}
+
+/// A syntax's name as it lives in the set, for the life of abc.
+fn intern(name: &str) -> &'static str {
+    syntaxes()
+        .find_syntax_by_name(name)
+        .map_or("Plain Text", |s| s.name.as_str())
+}
+
+/// bat's syntax for a file name: a compound extension (`html.j2`) first,
+/// then the extension, then the whole name (`Makefile`).
+fn syntax_for(file: &str) -> Option<&'static str> {
+    if let Some((_, syntax)) = NAMED.iter().find(|(named, _)| *named == file) {
+        return Some(syntax);
+    }
+    let set = syntaxes();
+    let parts: Vec<&str> = file.split('.').collect();
+    let compound = (parts.len() > 2).then(|| parts[parts.len() - 2..].join("."));
+    let extension = (parts.len() > 1).then(|| parts[parts.len() - 1].to_string());
+    [compound, extension, Some(file.to_string())]
+        .into_iter()
+        .flatten()
+        .find_map(|candidate| set.find_syntax_by_extension(&candidate))
+        .filter(|s| s.name != "Plain Text")
+        .map(|s| s.name.as_str())
+}
+
+/// Whether HTML holds Jinja's statements or comments. `{{ }}` alone could be
+/// any templating.
+fn jinja(text: &str) -> bool {
+    text.lines()
+        .take(200)
+        .any(|line| line.contains("{%") || line.contains("{#"))
 }
 
 /// What a span of code is, as the theme colours it.
@@ -109,6 +191,7 @@ fn config(lang: Lang) -> Option<&'static HighlightConfiguration> {
     static TYPESCRIPT: OnceLock<HighlightConfiguration> = OnceLock::new();
     static TSX: OnceLock<HighlightConfiguration> = OnceLock::new();
     static PYTHON: OnceLock<HighlightConfiguration> = OnceLock::new();
+    static JAVASCRIPT: OnceLock<HighlightConfiguration> = OnceLock::new();
     // TypeScript's own query covers only TypeScript syntax; upstream layers the
     // JavaScript queries under it (ADR 0003). Earlier patterns win.
     Some(match lang {
@@ -147,12 +230,148 @@ fn config(lang: Lang) -> Option<&'static HighlightConfiguration> {
                 &[tree_sitter_python::HIGHLIGHTS_QUERY],
             )
         }),
-        Lang::Plain => return None,
+        Lang::JavaScript => JAVASCRIPT.get_or_init(|| {
+            build(
+                tree_sitter_javascript::LANGUAGE.into(),
+                "javascript",
+                &[
+                    tree_sitter_javascript::JSX_HIGHLIGHT_QUERY,
+                    tree_sitter_javascript::HIGHLIGHT_QUERY,
+                ],
+            )
+        }),
+        Lang::Syntax(_) | Lang::Plain => return None,
     })
 }
 
 /// Spans for each line of `source`, or None for a language abc doesn't highlight.
 pub fn highlight(source: &str, lang: Lang) -> Option<Vec<Vec<Span>>> {
+    match lang {
+        Lang::Syntax(name) => highlight_syntax(source, name),
+        Lang::Plain => None,
+        _ => highlight_tree(source, lang),
+    }
+}
+
+/// bat's scopes abc colours, and their kinds. A scope such as
+/// `keyword.control.flow.python` takes the longest prefix here, by whole
+/// parts, and the innermost scope with one decides. Quotes and comment
+/// markers go with what they mark.
+const SCOPES: &[(&str, Kind)] = &[
+    ("comment", Kind::Comment),
+    ("punctuation.definition.comment", Kind::Comment),
+    ("markup.quote", Kind::Comment),
+    ("string", Kind::String),
+    ("punctuation.definition.string", Kind::String),
+    ("constant.character.escape", Kind::String),
+    ("markup.raw", Kind::String),
+    ("punctuation.definition.raw", Kind::String),
+    ("constant", Kind::Constant),
+    ("keyword", Kind::Keyword),
+    ("keyword.operator", Kind::Punctuation),
+    ("storage", Kind::Keyword),
+    ("entity.name.tag", Kind::Keyword),
+    ("markup.heading", Kind::Keyword),
+    ("punctuation.definition.heading", Kind::Keyword),
+    ("entity.name.function", Kind::Function),
+    ("support.function", Kind::Function),
+    ("variable.function", Kind::Function),
+    ("markup.underline.link", Kind::Function),
+    ("entity.name.type", Kind::Type),
+    ("entity.name.class", Kind::Type),
+    ("entity.name.section", Kind::Type),
+    ("entity.other.inherited-class", Kind::Type),
+    ("support.type", Kind::Type),
+    ("support.class", Kind::Type),
+    ("entity.other.attribute-name", Kind::Property),
+    ("variable.other.member", Kind::Property),
+    ("variable.other.property", Kind::Property),
+    ("support.variable.property", Kind::Property),
+    ("meta.mapping.key", Kind::Property),
+    ("punctuation", Kind::Punctuation),
+];
+
+/// Scopes that colour everything inside them alike, whatever else is nested:
+/// a heading's text as its `#`, a comment's links and keywords as the comment.
+const WHOLE: &[&str] = &["comment", "markup.heading"];
+
+/// Files with a line longer than this show plain: syntect's regexes are slow
+/// on minified and generated lines.
+const LONGEST_LINE: usize = 5_000;
+
+/// The kind of a scope, by the longest prefix of whole parts in [`SCOPES`].
+fn scope_kind(scope: Scope) -> Option<Kind> {
+    let name = scope.build_string();
+    SCOPES
+        .iter()
+        .filter(|(prefix, _)| {
+            name == *prefix
+                || name
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| rest.starts_with('.'))
+        })
+        .max_by_key(|(prefix, _)| prefix.len())
+        .map(|(_, kind)| *kind)
+}
+
+/// Highlights with bat's syntax `name`, a line at a time.
+fn highlight_syntax(source: &str, name: &str) -> Option<Vec<Vec<Span>>> {
+    let set = syntaxes();
+    let syntax = set.find_syntax_by_name(name)?;
+    if source.split('\n').any(|line| line.len() > LONGEST_LINE) {
+        return None;
+    }
+    let mut state = ParseState::new(syntax);
+    let mut stack = ScopeStack::new();
+    let mut kinds: HashMap<Scope, Option<Kind>> = HashMap::new();
+    let mut kind_of = |scope: Scope| *kinds.entry(scope).or_insert_with(|| scope_kind(scope));
+    let mut kind_now = |stack: &ScopeStack| {
+        let scopes = stack.as_slice();
+        let whole = scopes.iter().find(|scope| {
+            let name = scope.build_string();
+            WHOLE
+                .iter()
+                .any(|w| name == *w || name.strip_prefix(w).is_some_and(|r| r.starts_with('.')))
+        });
+        match whole {
+            Some(scope) => kind_of(*scope),
+            None => scopes.iter().rev().find_map(|scope| kind_of(*scope)),
+        }
+    };
+    let mut lines: Vec<Vec<Span>> = Vec::new();
+    for line in LinesWithEndings::from(source) {
+        let text_end = line.strip_suffix('\n').map_or(line.len(), str::len);
+        let mut spans: Vec<Span> = Vec::new();
+        let mut push = |from: usize, to: usize, kind: Option<Kind>| {
+            let to = to.min(text_end);
+            let Some(kind) = kind.filter(|_| to > from) else {
+                return;
+            };
+            match spans.last_mut() {
+                Some(last) if last.kind == kind && last.end == from => last.end = to,
+                _ => spans.push(Span {
+                    start: from,
+                    end: to,
+                    kind,
+                }),
+            }
+        };
+        let mut from = 0;
+        for (at, op) in state.parse_line(line, set).ok()? {
+            push(from, at, kind_now(&stack));
+            stack.apply(&op).ok()?;
+            from = at;
+        }
+        push(from, text_end, kind_now(&stack));
+        lines.push(spans);
+    }
+    // A final newline ends a last, empty line.
+    lines.resize(source.split('\n').count(), Vec::new());
+    Some(lines)
+}
+
+/// Highlights with a tree-sitter grammar.
+fn highlight_tree(source: &str, lang: Lang) -> Option<Vec<Vec<Span>>> {
     let config = config(lang)?;
     // Byte offset where each line starts, so a span can be split across lines.
     let starts: Vec<usize> = std::iter::once(0)
@@ -216,9 +435,134 @@ mod tests {
         assert_eq!(Lang::of("verify.ts"), Lang::TypeScript);
         assert_eq!(Lang::of("App.TSX"), Lang::Tsx);
         assert_eq!(Lang::of("score.py"), Lang::Python);
-        assert_eq!(Lang::of("README.md"), Lang::Plain);
-        assert_eq!(Lang::of("Makefile"), Lang::Plain);
+        assert_eq!(Lang::of("README.md"), Lang::Syntax("Markdown"));
+        assert_eq!(Lang::of("Makefile"), Lang::Syntax("Makefile"));
         assert!(highlight("anything", Lang::Plain).is_none());
+    }
+
+    #[test]
+    fn every_other_file_type_gets_one_of_bats_syntaxes() {
+        for (name, syntax) in [
+            ("Cargo.toml", "TOML"),
+            ("Cargo.lock", "TOML"),
+            (".github/check.yml", "YAML"),
+            ("package.json", "JSON"),
+            ("index.html", "HTML"),
+            ("base.html.j2", "HTML (Jinja2)"),
+            ("macros.jinja", "Jinja2"),
+            (".gitignore", "Git Ignore"),
+            ("Dockerfile", "Dockerfile"),
+            ("deploy.sh", "Bourne Again Shell (bash)"),
+            ("schema.SQL", "SQL"),
+        ] {
+            assert_eq!(Lang::of(name), Lang::Syntax(syntax), "{name}");
+        }
+        assert_eq!(
+            Lang::of("app.jsx"),
+            Lang::JavaScript,
+            "tree-sitter's, not bat's"
+        );
+        assert_eq!(Lang::of("server.mjs"), Lang::JavaScript);
+        assert_eq!(Lang::of("LICENSE"), Lang::Plain);
+        assert_eq!(Lang::of("notes.txt"), Lang::Plain, "plain text is plain");
+    }
+
+    #[test]
+    fn a_shebang_or_jinja_tags_say_what_a_file_is() {
+        let script = "#!/usr/bin/env bash\necho hi\n";
+        assert_eq!(
+            Lang::detect("bin/release", script),
+            Lang::Syntax("Bourne Again Shell (bash)")
+        );
+        let template = "<ul>\n{% for item in items %}<li>{{ item }}</li>{% endfor %}\n</ul>\n";
+        assert_eq!(
+            Lang::detect("templates/list.html", template),
+            Lang::Syntax("HTML (Jinja2)")
+        );
+        assert_eq!(
+            Lang::detect("app.html", "<p>{{ angular }}</p>"),
+            Lang::Syntax("HTML"),
+            "{{ }} alone is other templating too"
+        );
+        assert_eq!(Lang::detect("main.rs", script), Lang::Rust, "the name wins");
+    }
+
+    #[test]
+    fn bats_syntaxes_colour_what_tree_sitter_would() {
+        let md = "# Title\n\nSome `code` here.\n";
+        assert_eq!(
+            spans(md, Lang::Syntax("Markdown"), 0),
+            [("# Title".to_string(), Kind::Keyword)],
+            "a heading is one colour"
+        );
+        assert!(has(
+            &spans(md, Lang::Syntax("Markdown"), 2),
+            "`code`",
+            Kind::String
+        ));
+        let toml = "[package]\nname = \"abc\"\nversion = 3\n";
+        let toml_lang = Lang::Syntax("TOML");
+        assert!(
+            has(&spans(toml, toml_lang, 1), "\"abc\"", Kind::String),
+            "quotes and all"
+        );
+        assert!(has(&spans(toml, toml_lang, 2), "3", Kind::Constant));
+        let html = "<a href=\"/x\">go</a>";
+        let line = spans(html, Lang::Syntax("HTML"), 0);
+        assert!(has(&line, "a", Kind::Keyword), "{line:?}");
+        assert!(has(&line, "href", Kind::Property));
+        assert!(
+            line.iter()
+                .any(|(t, k)| t.contains("/x") && *k == Kind::String)
+        );
+        let jinja = "{% if user %}{{ user.name }}{% endif %}";
+        let line = spans(jinja, Lang::Syntax("Jinja2"), 0);
+        assert!(has(&line, "if", Kind::Keyword), "{line:?}");
+    }
+
+    #[test]
+    fn spans_from_bats_syntaxes_stay_within_their_lines() {
+        let src = "# a\n\n```rust\nfn main() {}\n```\nlast line without a newline";
+        let lines: Vec<&str> = src.split('\n').collect();
+        let highlighted = highlight(src, Lang::Syntax("Markdown")).unwrap();
+        assert_eq!(highlighted.len(), lines.len());
+        for (i, spans) in highlighted.iter().enumerate() {
+            for s in spans {
+                assert!(
+                    s.start < s.end && s.end <= lines[i].len(),
+                    "line {i}: {s:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_file_with_a_huge_line_shows_plain() {
+        let minified = format!("{{\"a\": \"{}\"}}\n", "x".repeat(6_000));
+        assert!(highlight(&minified, Lang::Syntax("JSON")).is_none());
+        assert!(highlight("{\"a\": 1}\n", Lang::Syntax("JSON")).is_some());
+    }
+
+    #[test]
+    fn labels_are_short() {
+        assert_eq!(Lang::Syntax("Markdown").label(), "markdown");
+        assert_eq!(Lang::Syntax("Bourne Again Shell (bash)").label(), "bash");
+        assert_eq!(Lang::Syntax("HTML (Jinja2)").label(), "jinja2");
+        assert_eq!(Lang::JavaScript.label(), "js");
+        assert_eq!(Lang::Rust.label(), "rust");
+    }
+
+    #[test]
+    fn javascript_and_jsx_use_tree_sitter() {
+        let src = "export const App = () => <Button label=\"go\" />\n// done";
+        let line = spans(src, Lang::JavaScript, 0);
+        assert!(has(&line, "export", Kind::Keyword));
+        assert!(has(&line, "\"go\"", Kind::String));
+        assert!(has(
+            &spans(src, Lang::JavaScript, 1),
+            "// done",
+            Kind::Comment
+        ));
     }
 
     #[test]

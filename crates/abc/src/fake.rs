@@ -256,6 +256,7 @@ pub const PLATFORM_FILES: &[&str] = &[
     "docs/gst.md",
     "docs/logo.png",
     "generated/rows.rs",
+    "LICENSE",
     "package.json",
     "packages/integrations/gst/client.ts",
     "packages/integrations/gst/verify.ts",
@@ -459,6 +460,9 @@ pub fn read(path: &str) -> Result<abc_core::model::FileContents, String> {
         "apps/web/src/pages/verify-gst.tsx" | "apps/web/src/pages/home.tsx" => text(VERIFY_GST_TSX),
         "packages/scoring/score.py" | "packages/scoring/verifier.py" => text(SCORE_PY),
         "README.md" | "docs/gst.md" => text(README_MD),
+        "LICENSE" => text(
+            "MIT License\n\nCopyright (c) 2026 Privue\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software, to deal in the software without restriction.\n",
+        ),
         "generated/rows.rs" => Ok(FileContents::Text { text: rows() }),
         "docs/logo.png" => Ok(FileContents::Binary { size: 24_123 }),
         "data/dump.sql" => Ok(FileContents::TooLarge {

@@ -34,8 +34,8 @@ in `docs/ui/tapes/<screen>.tape` → only then wire to real data.
 - Never change the `hello` message's shape. Bump `PROTOCOL` on any other wire change.
 - Crates: ratatui, crossterm, tokio, serde, serde_json, toml, anyhow, thiserror, clap,
   tracing(-subscriber, -appender), tree-sitter(-highlight, -rust, -typescript, -javascript,
-  -python), ignore, nucleo, gix, directories, tui-tree-widget, tui-input, crokey, confique,
-  terminal-colorsaurus, devicons; insta, tempfile in tests. Ask before others.
+  -python), syntect, two-face, ignore, nucleo, gix, directories, tui-tree-widget, tui-input,
+  crokey, confique, terminal-colorsaurus, devicons; insta, tempfile in tests. Ask before others.
 - Write the failing test before the fix. Never edit or delete a test to make it pass: ask.
 - A user-visible change gets a line under `## [Unreleased]` in `CHANGELOG.md`.
 - Out of scope; don't build, stub or prepare: Claude sessions, tmux, services, diffs,

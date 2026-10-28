@@ -6,7 +6,12 @@ all-features = true
 [advisories]
 # Any advisory fails the check, unmaintained crates included. To accept one,
 # add its id here with the reason.
-ignore = []
+ignore = [
+    # Unmaintained, not vulnerable. syntect reads only the syntax definitions
+    # built into abc with it, never anything from outside, and no syntect
+    # release does without it yet.
+    { id = "RUSTSEC-2025-0141", reason = "bincode 1: unmaintained; syntect uses it only for abc's built-in syntaxes" },
+]
 
 [licenses]
 # Licences compatible with abc's MIT licence.

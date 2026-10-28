@@ -18,10 +18,10 @@ expression: screen
 │                                      │     scoring                         │ 11    | { kind: "ok"; gstin: string }  │
 │                                      │     shared                          │ 12    | { kind: "mismatch"; reason: s… │
 │                                      │   .gitignore                        │ 13                                     │
-│                                      │   package.json                      │ 14  // Checks a GSTIN against the reg… │
-│                                      │   README.md                         │ 15  // details the customer gave us.   │
-│                                      │   tsconfig.json                     │ 16  export async function verify(      │
-│                                      │                                      │ 17    input: GstInput,                 │
+│                                      │   LICENSE                           │ 14  // Checks a GSTIN against the reg… │
+│                                      │   package.json                      │ 15  // details the customer gave us.   │
+│                                      │   README.md                         │ 16  export async function verify(      │
+│                                      │   tsconfig.json                     │ 17    input: GstInput,                 │
 │                                      │                                      │ 18    client: GstClient,               │
 │                                      │                                      │ 19  ): Promise<Result> {               │
 │                                      │                                      │ 20    const a = normalise(input)       │

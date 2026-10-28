@@ -32,8 +32,10 @@ pub fn kind_style(kind: Kind, theme: &Theme) -> Style {
 /// The header: icon, path (trimmed from the left to fit), language.
 pub fn header<'a>(viewer: &Viewer, width: usize, focused: bool, theme: &Theme) -> Line<'a> {
     let name = viewer.name();
+    // As the text was detected, by its contents too, once it's read.
     let lang = match &viewer.document {
-        Document::Binary { .. } => "binary",
+        Document::Binary { .. } => "binary".to_string(),
+        Document::Text(text) => text.lang.label(),
         _ => Lang::of(name).label(),
     };
     let (icon, color) = icons::file(name, theme);

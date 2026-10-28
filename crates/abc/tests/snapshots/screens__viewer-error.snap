@@ -18,10 +18,10 @@ expression: screen
 │     gst-lookup               #88   │     scoring                         │                                        │
 │       feat/gst-lookup           4  │     shared                          │                                        │
 │     ocr-retry                        │   .gitignore                        │                                        │
-│       feat/ocr-retry      7  local │   package.json                      │                                        │
-│       ecourts                       │   README.md                         │                                        │
-│       main                      3  │   tsconfig.json                     │                                        │
-│                                      │                                      │                                        │
+│       feat/ocr-retry      7  local │   LICENSE                           │                                        │
+│       ecourts                       │   package.json                      │                                        │
+│       main                      3  │   README.md                         │                                        │
+│                                      │   tsconfig.json                     │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │

@@ -19,6 +19,7 @@ terminal-colorsaurus.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 nucleo.workspace = true
+syntect.workspace = true
 tree-sitter.workspace = true
 tree-sitter-highlight.workspace = true
 tree-sitter-javascript.workspace = true
@@ -27,6 +28,7 @@ tree-sitter-rust.workspace = true
 tree-sitter-typescript.workspace = true
 tui-input.workspace = true
 tui-tree-widget.workspace = true
+two-face.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

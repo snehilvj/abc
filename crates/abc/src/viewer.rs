@@ -151,7 +151,7 @@ pub(crate) fn shown(line: &str) -> String {
 impl Document {
     pub fn from_contents(contents: FileContents, name: &str) -> Self {
         match contents {
-            FileContents::Text { text } => Self::Text(Text::new(&text, Lang::of(name))),
+            FileContents::Text { text } => Self::Text(Text::new(&text, Lang::detect(name, &text))),
             FileContents::Binary { size } => Self::Binary { size },
             FileContents::TooLarge { size, limit } => Self::TooLarge { size, limit },
         }

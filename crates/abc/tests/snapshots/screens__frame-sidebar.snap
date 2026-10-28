@@ -18,10 +18,10 @@ expression: screen
 │     old-idea                missing │     scoring                         │ 11    | { kind: "ok"; gstin: string }  │
 │       feat/old-idea                 │     shared                          │ 12    | { kind: "mismatch"; reason: s… │
 │                                      │   .gitignore                        │ 13                                     │
-│    ecourts                          │   package.json                      │ 14  // Checks a GSTIN against the reg… │
-│     gst-lookup               #88   │   README.md                         │ 15  // details the customer gave us.   │
-│       feat/gst-lookup           4  │   tsconfig.json                     │ 16  export async function verify(      │
-│     ocr-retry                        │                                      │ 17    input: GstInput,                 │
+│    ecourts                          │   LICENSE                           │ 14  // Checks a GSTIN against the reg… │
+│     gst-lookup               #88   │   package.json                      │ 15  // details the customer gave us.   │
+│       feat/gst-lookup           4  │   README.md                         │ 16  export async function verify(      │
+│     ocr-retry                        │   tsconfig.json                     │ 17    input: GstInput,                 │
 │       feat/ocr-retry      7  local │                                      │ 18    client: GstClient,               │
 │                                      │                                      │ 19  ): Promise<Result> {               │
 │    old-scraper             missing │                                      │ 20    const a = normalise(input)       │

@@ -20,10 +20,10 @@ expression: screen
 │     ocr-retry                        │     scoring                         │                                        │
 │       feat/ocr-retry      7  local │     shared                          │                                        │
 │       ecourts                       │   .gitignore                        │                                        │
-│       main                      3  │   package.json                      │                                        │
+│       main                      3  │   LICENSE                           │                                        │
+│                                      │   package.json                      │                                        │
 │                                      │   README.md                         │                                        │
 │                                      │   tsconfig.json                     │                                        │
-│                                      │                                      │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │

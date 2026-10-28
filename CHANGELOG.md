@@ -20,12 +20,15 @@ worktrees, with a background server that owns the state.
   checks and review. A detailed (two lines per worktree) and a compact style.
 - **Explorer** of a worktree's files as git sees them: dotfiles in, `.git` and
   what `.gitignore` leaves out, out.
-- **Viewer**: read-only and Vim-style, with tree-sitter highlighting for Rust,
-  TypeScript, TSX, JavaScript and Python. Motions and counts, visual mode, `/`
-  and `* #` to find, `:` to go to a line, `y` to copy through the system's
-  clipboard tool (or OSC 52 over ssh), and `g y` to copy an `@path:12-20`
-  reference for Claude Code. Binary files and files over the size limit say
-  so instead.
+- **Viewer**: read-only and Vim-style. Rust, TypeScript, TSX, JavaScript and
+  Python are highlighted with tree-sitter, and some 220 other file types
+  (Markdown, TOML, YAML, JSON, HTML, Jinja, shell, Dockerfiles, SQL, ...) with
+  bat's syntax definitions, built in; a shebang names a script's language, and
+  HTML with Jinja's tags is highlighted as Jinja. Motions and counts, visual
+  mode, `/` and `* #` to find, `:` to go to a line, `y` to copy through the
+  system's clipboard tool (or OSC 52 over ssh), and `g y` to copy an
+  `@path:12-20` reference for Claude Code. Binary files and files over the size
+  limit say so instead.
 - **Switcher** (`ctrl-p`, `space f`, `space w`): fuzzy-find a worktree or a
   file in the current one.
 - **Find in files** (`space /`): smart-case text across a worktree, results

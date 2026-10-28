@@ -1,6 +1,6 @@
 # 0003: tree-sitter for highlighting
 
-- Status: accepted
+- Status: accepted, amended by 0006 (bat's syntaxes for every other file type)
 - Date: 2026-10-27
 
 ## Context

@@ -4,23 +4,24 @@ expression: screen
 ---
 ┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
 │  WORKTREES                           │ Code                                                                          │
-│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   README.md · plain ─────────────────┤
-│    gst-check               #142   │   .github                           │  1  # privue-platform                  │
+│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   LICENSE · plain ───────────────────┤
+│    gst-check               #142   │   .github                           │  1  MIT License                        │
 │       feat/gst-check      3    2  │   apps                              │  2                                     │
-│     gst-rounding            #139   │   data                              │  3  Monorepo for the platform service… │
+│     gst-rounding            #139   │   data                              │  3  Copyright (c) 2026 Privue          │
 │       fix/gst-rounding          1  │   docs                              │  4                                     │
-│     ledger-round            #141    │   generated                         │  5  ## Layout                          │
-│       fix/ledger-round    1        │   packages                          │  6                                     │
-│       privue-platform               │     integrations                    │  7  - `packages/`: shared libraries    │
-│       main                          │       gst                           │  8  - `apps/`: deployable apps         │
-│                                      │         client.ts                   │  9                                     │
+│     ledger-round            #141    │   generated                         │  5  Permission is hereby granted, fre… │
+│       fix/ledger-round    1        │   packages                          │  6  of this software, to deal in the … │
+│       privue-platform               │     integrations                    │  7                                     │
+│       main                          │       gst                           │                                        │
+│                                      │         client.ts                   │                                        │
 │    ecourts                          │         verify.ts                   │                                        │
 │     gst-lookup               #88   │     scoring                         │                                        │
 │       feat/gst-lookup           4  │     shared                          │                                        │
 │     ocr-retry                        │   .gitignore                        │                                        │
-│       feat/ocr-retry      7  local │   package.json                      │                                        │
-│       ecourts                       │   README.md                         │                                        │
-│       main                      3  │   tsconfig.json                     │                                        │
+│       feat/ocr-retry      7  local │   LICENSE                           │                                        │
+│       ecourts                       │   package.json                      │                                        │
+│       main                      3  │   README.md                         │                                        │
+│                                      │   tsconfig.json                     │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │
@@ -38,7 +39,6 @@ expression: screen
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │
 │                                      │                                      │                                        │
-│                                      │                                      │                                        │
-├──────────────────────────────────────┴──────────────────────────────────────┴─────────────────────── 1:1 · 1–9 of 9 ─┤
+├──────────────────────────────────────┴──────────────────────────────────────┴─────────────────────── 1:1 · 1–7 of 7 ─┤
 │ h j k l move · w b e words · / n find · v V select · : line · esc explorer · space commands · ? help · q quit        │
 └─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘

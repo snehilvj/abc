@@ -7,7 +7,7 @@ expression: screen
 │    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
 │    gst-ch┌ Switch ──────────────────────────────────────────────────────────────────────────────────────┐m "../../… │
 │       fea│  Worktrees    Files                                                            tab to change │} from ".… │
-│     gst-ro│ >                                                                                         18 │           │
+│     gst-ro│ >                                                                                         19 │           │
 │       fix├──────────────────────────────────────────────────────────────────────────────────────────────┤           │
 │     ledger│      .github/workflows/check.yml                                                            │           │
 │       fix│      .gitignore                                                                             │           │
