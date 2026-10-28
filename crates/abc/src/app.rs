@@ -26,6 +26,8 @@ use crate::viewer::{Document, Place, Viewer, reference};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cmd {
     Copy(String),
+    /// Start abcd, or connect to it, again after it failed to start.
+    Connect,
     /// What abcd makes of `path`, a folder or a git URL, as a repository
     /// named `name`: for a URL, the name says where the clone goes.
     CheckRepo {
@@ -492,6 +494,10 @@ impl App {
             // With no text to move through, h and l still move between panes.
             Action::FocusLeft | Action::Left => self.move_focus(-1),
             Action::FocusRight | Action::Right => self.move_focus(1),
+            Action::Retry if self.connection == Connection::StartFailed => {
+                self.connection = Connection::Starting;
+                self.outbox.push(Cmd::Connect);
+            }
             Action::LastWorktree => {
                 if let Some(last) = self.last.clone() {
                     self.open(&last);
@@ -2615,6 +2621,19 @@ mod tests {
             old.connection,
             Connection::Incompatible { ours: 1, theirs: 2 }
         );
+    }
+
+    #[test]
+    fn r_tries_starting_abcd_again() {
+        let mut app = starting();
+        app.apply(Msg::StartFailed("no answer".into()));
+        press(&mut app, "r");
+        assert_eq!(
+            (&app.connection, app.outbox.as_slice()),
+            (&Connection::Starting, &[Cmd::Connect][..])
+        );
+        press(&mut app, "r");
+        assert_eq!(app.outbox.len(), 1, "once, while it's starting");
     }
 
     #[test]

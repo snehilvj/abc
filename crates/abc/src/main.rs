@@ -13,13 +13,13 @@ use clap::{Parser, Subcommand};
     version,
     about = "A terminal workspace for many repos and git worktrees"
 )]
-#[command(arg_required_else_help = true)]
 struct Cli {
     /// The profile to use, else ABC_PROFILE, else stable. Profiles share nothing.
     #[arg(long, global = true)]
     profile: Option<String>,
+    /// Without one, abc opens.
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -44,6 +44,9 @@ fn main() -> anyhow::Result<ExitCode> {
     let paths = || -> anyhow::Result<Paths> {
         let profile = Profile::choose(profile.as_deref(), |var| std::env::var_os(var))?;
         Ok(Paths::from_env(profile)?)
+    };
+    let Some(command) = command else {
+        return abc::tui::run(paths()?).map(|()| ExitCode::SUCCESS);
     };
     match command {
         Command::Gallery(gallery) => abc::gallery::run(gallery).map(|()| ExitCode::SUCCESS),

@@ -566,7 +566,7 @@ fn settled(mut app: App) -> App {
                     let files = Ok(fake::files(&app.repos, &worktree));
                     app.apply(Msg::FilesListed { worktree, files });
                 }
-                Cmd::Copy(_) => {}
+                Cmd::Copy(_) | Cmd::Connect => {}
             }
         }
     }
@@ -630,6 +630,7 @@ fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
                     let files = Ok(fake::files(&app.repos, &worktree));
                     app.apply(Msg::FilesListed { worktree, files });
                 }
+                Cmd::Connect => {}
                 Cmd::Copy(text) => {
                     // On this thread: OSC 52 goes to the terminal between frames.
                     if let Err(why) = clipboard::copy(&text, &mut stdout()) {
@@ -771,7 +772,7 @@ pub fn run(args: Args) -> Result<()> {
 
 /// Asks the terminal to send pasted text in one piece rather than as keys,
 /// and to stop again however abc leaves, after a panic too.
-fn paste_in_one_piece() {
+pub(crate) fn paste_in_one_piece() {
     let _ = execute!(stdout(), EnableBracketedPaste);
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
