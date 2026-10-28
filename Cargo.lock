@@ -18,6 +18,7 @@ dependencies = [
  "tempfile",
  "terminal-colorsaurus",
  "tokio",
+ "tracing",
  "tree-sitter",
  "tree-sitter-highlight",
  "tree-sitter-javascript",
@@ -38,6 +39,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tracing-appender",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -53,8 +56,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
- "tracing-appender",
- "tracing-subscriber",
 ]
 
 [[package]]
