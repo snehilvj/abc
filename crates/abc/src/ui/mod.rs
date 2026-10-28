@@ -567,6 +567,10 @@ fn keybar_items(app: &App) -> Vec<(String, &'static str)> {
                 "focus",
             ),
         ],
+        // Loading, binary, too large or unreadable: nothing to move through.
+        Context::Viewer if !app.current_viewer().is_some_and(|v| v.has_text()) => {
+            vec![(one(FocusLeft), "explorer")]
+        }
         Context::Viewer => vec![
             (
                 format!("{} {} {} {}", one(Left), one(Down), one(Up), one(Right)),
@@ -784,5 +788,34 @@ fn ltrunc(s: &str, n: usize) -> String {
         std::iter::once('…')
             .chain(s.chars().skip(len - n + 1))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gallery::{self, Screen};
+
+    fn keybar(screen: Screen, state: &str) -> Vec<String> {
+        let preset = gallery::presets(screen)
+            .into_iter()
+            .find(|p| p.name == state)
+            .expect("a gallery state");
+        keybar_items(&preset.app)
+            .into_iter()
+            .map(|(keys, label)| format!("{keys} {label}"))
+            .collect()
+    }
+
+    #[test]
+    fn a_viewer_with_no_text_offers_only_the_way_back() {
+        for state in ["binary", "too-large", "loading", "error"] {
+            assert_eq!(
+                keybar(Screen::Viewer, state),
+                ["esc explorer", "space commands", "? help", "q quit"],
+                "{state}"
+            );
+        }
+        assert!(keybar(Screen::Viewer, "highlighted").contains(&"/ n find".to_string()));
     }
 }
