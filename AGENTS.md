@@ -5,7 +5,8 @@ Decisions: `docs/decisions/`. Screen designs: https://claude.ai/artifact/6oZWb4B
 
 ## Commands
 
-- `just check` (needs cargo-insta): fmt, clippy, tests and snapshots, docs. CI runs it on every push.
+- `just check` (needs cargo-insta): lock file, fmt, clippy, tests and snapshots, docs; each is a
+  recipe of its own, and CI runs each as a job on every push. `just deny`: cargo-deny.
 - `just gallery <screen> [--state s] [--theme dark|light]`: a screen on fake data (needs a
   Nerd Font). Snapshots: `cargo insta review`. `just tape <screen>`: its GIF in `target/vhs/`.
 - `just fixtures` then `just dev <args>`: this checkout against fixture repos in the `dev`
@@ -36,6 +37,7 @@ in `docs/ui/tapes/<screen>.tape` → only then wire to real data.
   -python), ignore, nucleo, gix, directories, tui-tree-widget, tui-input, crokey, confique,
   terminal-colorsaurus, devicons; insta, tempfile in tests. Ask before others.
 - Write the failing test before the fix. Never edit or delete a test to make it pass: ask.
+- A user-visible change gets a line under `## [Unreleased]` in `CHANGELOG.md`.
 - Out of scope; don't build, stub or prepare: Claude sessions, tmux, services, diffs,
   PR review (PR status via `gh` is in), SQLite, editing, language servers, SCIP, symbol
   search, remote access.
