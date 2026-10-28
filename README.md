@@ -80,7 +80,7 @@ within a second, in abc and abcd both; a file with a mistake says where and
 keeps the last good settings.
 
 ```toml
-theme = "auto"          # or "dark", "light", "ansi"
+theme = "auto"          # or "dark", "light", "ansi", or one of yours
 
 [sidebar]
 style = "compact"       # one line per worktree
@@ -90,7 +90,22 @@ clone_dir = "~/src"     # where git URLs are cloned
 
 [keys.global]
 "space x" = "quit"      # add or change keys; "none" unbinds one
+
+[icons.glyphs]
+branch = "\ue0a0"       # any icon, one by one
+
+[mouse]
+enabled = false         # leave the mouse to the terminal
 ```
+
+Your own theme: `abc config theme dark > ~/.config/abc/<profile>/themes/mine.toml`
+writes the dark theme as a file to change, then `theme = "mine"`. A theme
+file names the theme it starts from (`inherit`) and the colours it changes,
+by role: `[ui]`, `[git]`, `[pr]` and `[syntax]`.
+
+abc takes the mouse, so its wheel scrolls the pane under the pointer rather
+than the terminal's history. Most terminals then select text with a key held
+(Shift; Option in iTerm2); `[mouse] enabled = false` gives the mouse back.
 
 ## How it works
 

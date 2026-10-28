@@ -60,8 +60,9 @@ names, `#rrggbb`, or indexes.
 **Icons.** abc requires a Nerd Font: a patched font such as FiraCode Nerd Font
 Mono, or Symbols Nerd Font Mono as a fallback in terminals that take a list of
 fonts. There is no plain-symbol mode. File-type icons and their colours come
-from [devicons](https://crates.io/crates/devicons). Git, pull request and check
-glyphs come from a built-in table that `[icons]` can override one by one.
+from [devicons](https://crates.io/crates/devicons). Git, pull request, check
+and status glyphs come from a built-in table that `[icons.glyphs]` can
+override one by one.
 
 ## Consequences
 
