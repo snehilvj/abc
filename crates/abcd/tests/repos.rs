@@ -337,3 +337,43 @@ async fn a_changed_settings_file_applies_while_abcd_runs() {
     );
     shut_down(client).await;
 }
+
+#[tokio::test]
+async fn a_name_is_one_folder_name_and_never_leads_a_clone_elsewhere() {
+    let home = home();
+    let url = remote(home.path(), "app");
+    let local = repo(home.path(), "local", &[]);
+    let client = connect(home.path()).await;
+    for name in ["../x", "a/b", "/tmp/x", ".", ".."] {
+        let check = client
+            .call::<RepoCheck>(check_url(&url, name))
+            .await
+            .unwrap_err();
+        assert_eq!(check.code, ErrorCode::CantAdd, "{name}");
+        assert!(
+            check.message.contains("one folder name"),
+            "{}",
+            check.message
+        );
+        let cloned = client
+            .call::<protocol::Added>(Call::RepoAdd {
+                path: url.clone(),
+                name: Some(name.into()),
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(cloned.code, ErrorCode::CantAdd, "{name}");
+        let folder = client
+            .call::<protocol::Added>(add(&local, Some(name)))
+            .await
+            .unwrap_err();
+        assert!(
+            folder.message.contains("one folder name"),
+            "{name}: {}",
+            folder.message
+        );
+    }
+    assert!(!home.path().join("x").exists(), "nothing cloned outside");
+    assert!(!std::path::Path::new("/tmp/x/.git").exists());
+    shut_down(client).await;
+}

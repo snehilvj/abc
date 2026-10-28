@@ -69,6 +69,19 @@ impl Inner {
     }
 }
 
+/// A repository's name names its clone's folder, so it's one folder name:
+/// never `a/b`, `..` or `/tmp/x`, which would clone elsewhere.
+fn one_folder_name(name: &str) -> Result<(), Failure> {
+    let mut parts = Path::new(name).components();
+    match (parts.next(), parts.next()) {
+        (Some(std::path::Component::Normal(_)), None) if !name.contains('/') => Ok(()),
+        _ => Err(failure(
+            ErrorCode::CantAdd,
+            format!("{name:?} isn't a name for a repository: use one folder name, without /"),
+        )),
+    }
+}
+
 fn failure(code: ErrorCode, message: impl Into<String>) -> Failure {
     Failure {
         code,
@@ -168,6 +181,7 @@ impl State {
         if name.is_empty() {
             return Err(failure(ErrorCode::CantAdd, "a repository needs a name"));
         }
+        one_folder_name(name)?;
         Ok(name.to_string())
     }
 
@@ -239,6 +253,7 @@ impl State {
         if name.is_empty() {
             return Err(cant("a repository needs a name".into()));
         }
+        one_folder_name(&name)?;
         if inner.saved.named(&name).is_some() {
             return Err(cant(format!("a repository is already named {name}")));
         }
