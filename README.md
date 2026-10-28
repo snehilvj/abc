@@ -124,8 +124,9 @@ gallery on fake data, then snapshot-tested at 120x40 and recorded as a tape,
 and only then wired to abcd. Decisions are recorded in `docs/decisions/`;
 `AGENTS.md` has the rules for coding agents working here.
 
-To release, set the version in `Cargo.toml`, then push a tag such as
-`v0.1.0`: CI builds abc and abcd for macOS and Linux and publishes them.
+To release, set the version in `Cargo.toml`, give it a section in
+`CHANGELOG.md`, then push a tag such as `v0.1.0`: CI builds abc and abcd for
+macOS and Linux and publishes them, with that section as the release notes.
 
 ## Licence
 

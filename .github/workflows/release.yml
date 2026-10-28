@@ -1,8 +1,9 @@
 name: release
 
 # A version tag, such as v0.1.0, builds abc and abcd for macOS and Linux and
-# publishes them as a GitHub release. Run by hand, it builds the archives
-# without publishing, to try a release before tagging.
+# publishes them as a GitHub release, with the version's section of
+# CHANGELOG.md as its notes. Run by hand, it builds the archives without
+# publishing, to try a release before tagging.
 on:
   push:
     tags: ["v*"]
@@ -68,13 +69,26 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
+      # The version's section of CHANGELOG.md, without its heading.
+      - name: Release notes
+        run: |
+          awk -v version="${GITHUB_REF_NAME#v}" '
+            /^## \[/ { here = index($0, "[" version "]") > 0; next }
+            /^\[[^]]+\]: / { next }
+            here
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no section for $GITHUB_REF_NAME"
+            exit 1
+          fi
       - run: >
           gh release create "$GITHUB_REF_NAME" dist/*
           --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME"
-          --generate-notes --verify-tag
+          --notes-file notes.md --verify-tag
         env:
           GH_TOKEN: ${{ github.token }}
