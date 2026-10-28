@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
+│  WORKTREES                           │ Code                                                                          │
+│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
+│    gst-ch┌ Switch ──────────────────────────────────────────────────────────────────────────────────────┐m "../../… │
+│       fea│  Worktrees    Files                                                            tab to change │} from ".… │
+│     gst-ro│ > gst                                                                                 3 of 7 │           │
+│       fix├──────────────────────────────────────────────────────────────────────────────────────────────┤           │
+│     ledger│   privue-platform gst-check         feat/gst-check     3    2     #142             now │           │
+│       fix│    privue-platform gst-rounding      fix/gst-rounding         1     #139          2h ago │           │
+│       pri│    ecourts         gst-lookup        feat/gst-lookup          4      #88       yesterday │           │
+│       mai│                                                                                              │           │
+│           │                                                                                              │           │
+│    ecourt│                                                                                              │           │
+│     gst-lo│                                                                                              │ string }  │
+│       fea│                                                                                              │reason: s… │
+│     ocr-re│                                                                                              │           │
+│       fea│                                                                                              │t the reg… │
+│       eco├──────────────────────────────────────────────────────────────────────────────────────────────┤gave us.   │
+│       mai│ enter switch · ↑↓ move · ctrl-u clear · esc close                                            │rify(      │
+│           └──────────────────────────────────────────────────────────────────────────────────────────────┘           │
+│                                      │                                      │ 18    client: GstClient,               │
+│                                      │                                      │ 19  ): Promise<Result> {               │
+│                                      │                                      │ 20    const a = normalise(input)       │
+│                                      │                                      │ 21    const record = await client.loo… │
+│                                      │                                      │ 22    if (!record) {                   │
+│                                      │                                      │ 23      return mismatch(a, "not regis… │
+│                                      │                                      │ 24    }                                │
+│                                      │                                      │ 25    if (record.legalName !== a.lega… │
+│                                      │                                      │ 26      return mismatch(a, "name diff… │
+│                                      │                                      │ 27    }                                │
+│                                      │                                      │ 28    if (a.state && record.state !==… │
+│                                      │                                      │ 29      return mismatch(a, `state is … │
+│                                      │                                      │ 30    }                                │
+│                                      │                                      │ 31    return { kind: "ok", gstin: a.g… │
+│                                      │                                      │ 32  }                                  │
+│                                      │                                      │ 33                                     │
+│                                      │                                      │ 34  function mismatch(a: GstInput, re… │
+├──────────────────────────────────────┴──────────────────────────────────────┴─────────────────────────── 1–34 of 58 ─┤
+│ j k move · enter open · gg G top/end · h l focus · space commands · ^p find · tab last worktree · ? help · q quit    │
+└─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘

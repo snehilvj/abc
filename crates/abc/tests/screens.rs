@@ -65,6 +65,18 @@ fn viewer() {
 }
 
 #[test]
+fn switcher() {
+    let theme = Theme::dark();
+    for preset in gallery::presets(Screen::Switcher) {
+        let screen = draw(120, 40, |frame| {
+            let area = frame.area();
+            abc::ui::draw(frame, area, &preset.app, &theme);
+        });
+        insta::assert_snapshot!(format!("switcher-{}", preset.name), screen);
+    }
+}
+
+#[test]
 fn file_icons() {
     let screen = draw(120, 40, |frame| {
         let area = frame.area();
