@@ -39,8 +39,13 @@ pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
             area.width,
             area.height
         );
+        // A terminal with no rows or columns left has nowhere to say so.
+        if area.is_empty() {
+            return;
+        }
         let x = area.x + area.width.saturating_sub(text.chars().count() as u16) / 2;
-        buf.set_string(x, area.y + area.height / 2 - 1, text, theme.text());
+        let y = area.y + (area.height / 2).saturating_sub(1);
+        buf.set_string(x, y, text, theme.text());
         return;
     }
     let g = Geometry::new(area, layout::columns(area.width, app.widths), split(app));
@@ -855,6 +860,16 @@ pub fn pane_at(area: Rect, app: &App, x: u16, y: u16) -> Option<Focus> {
 mod tests {
     use super::*;
     use crate::gallery::{self, Screen};
+
+    #[test]
+    fn a_terminal_one_row_tall_or_none_draws_without_crashing() {
+        let app = gallery::presets(Screen::Frame).remove(0).app;
+        for (width, height) in [(120, 0), (120, 1), (120, 2), (0, 10), (1, 1)] {
+            let area = Rect::new(0, 0, width, height);
+            let mut buf = Buffer::empty(area);
+            draw_buffer(&mut buf, area, &app, &Theme::dark());
+        }
+    }
 
     #[test]
     fn the_pane_under_the_mouse_is_found_as_drawn() {
