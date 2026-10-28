@@ -89,6 +89,8 @@ pub enum Action {
     SearchWord,
     /// `#`: finds the word under the cursor, backwards.
     SearchWordBack,
+    /// Finds text in every file of the current worktree.
+    FindInFiles,
 }
 
 impl FromStr for Action {
@@ -158,6 +160,7 @@ impl FromStr for Action {
             "previous_match" => Self::PreviousMatch,
             "search_word" => Self::SearchWord,
             "search_word_back" => Self::SearchWordBack,
+            "find_in_files" => Self::FindInFiles,
             other => return Err(format!("unknown action {other:?}")),
         })
     }
@@ -328,6 +331,7 @@ impl Keymap {
             (Global, "r", Retry),
             (Global, "space f", FindFile),
             (Global, "space w", FindWorktree),
+            (Global, "space /", FindInFiles),
             (Global, "space r a", AddRepo),
             (Global, "space r d", RemoveRepo),
             (Global, "space ?", Help),

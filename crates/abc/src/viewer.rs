@@ -121,7 +121,7 @@ impl Text {
 /// A line as the viewer shows it: tabs as spaces, no `\r` from a CRLF ending,
 /// and other control characters as their symbols (␛), so a file can't send
 /// the terminal commands.
-fn shown(line: &str) -> String {
+pub(crate) fn shown(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     for c in line.chars() {
         match c {
@@ -159,6 +159,8 @@ pub struct Viewer {
     jumps: Vec<Pos>,
     /// Visual mode's selection, from its anchor to the cursor.
     pub selection: Option<Selection>,
+    /// A line to go to once the text arrives, when find in files opened the file.
+    pub landing: Option<usize>,
     /// Rows the text took when last drawn, for paging.
     pub(crate) height: Cell<usize>,
     /// The first column on screen. Drawing moves it to keep the cursor in view.
@@ -204,6 +206,7 @@ impl Viewer {
             want: 0,
             jumps: Vec::new(),
             selection: None,
+            landing: None,
             height: Cell::new(30),
             hscroll: Cell::new(0),
         }

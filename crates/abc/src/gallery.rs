@@ -3,7 +3,7 @@
 
 use std::io::stdout;
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow};
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -16,6 +16,7 @@ use crate::app::{App, Cmd, Connection, Entry, Focus, Msg, SidebarStyle, Status, 
 use crate::clipboard;
 use crate::explorer::{Explorer, Listing};
 use crate::fake;
+use crate::find;
 use crate::highlight;
 use crate::motion::Pos;
 use crate::theme::{Theme, ThemeChoice};
@@ -28,6 +29,8 @@ pub enum Screen {
     Explorer,
     Viewer,
     Switcher,
+    /// Find in files.
+    Find,
     /// Every icon and what it means, with a 1-cell and a 2-cell gap side by side.
     Icons,
     /// Panics on the first key, to check the terminal comes back clean.
@@ -71,6 +74,7 @@ pub fn presets(screen: Screen) -> Vec<Preset> {
         Screen::Explorer => explorer(),
         Screen::Viewer => viewer(),
         Screen::Switcher => switcher(),
+        Screen::Find => find(),
         Screen::Icons | Screen::Panic => Vec::new(),
     }
 }
@@ -312,6 +316,98 @@ pub fn switcher() -> Vec<Preset> {
     ]
 }
 
+/// Find in files' states, opened over the populated frame with `space /`.
+pub fn find() -> Vec<Preset> {
+    let opened = || typed(connected(fake::repos()), " /");
+    let found = |query: &str| settled(typed(opened(), query));
+    // Asked for, with abcd's answer still to come: `answer` gives it.
+    let asked = |answer: &dyn Fn(&mut App, u64, Vec<abc_core::model::FoundFile>)| {
+        let mut app = typed(opened(), "gstin");
+        app.tick(Instant::now() + find::DELAY);
+        if let Some(Cmd::Search { id, query, .. }) = app.outbox.pop() {
+            let (files, _) = fake::search(&listed_files(&app), &query, find::MAX_LINES);
+            answer(&mut app, id, files);
+        }
+        app
+    };
+    let searching = asked(&|app, id, files| {
+        let files = files.into_iter().take(2).collect();
+        app.apply(Msg::Found { id, files });
+    });
+    let failed = asked(&|app, id, _| {
+        let why = "abcd isn't connected".into();
+        app.apply(Msg::SearchFailed { id, why });
+    });
+    // `client.ts` line 4 is the eighth line found.
+    let mut opened_line = found("gstin");
+    for _ in 0..7 {
+        opened_line = pressed(opened_line, KeyCode::Down, KeyModifiers::NONE);
+    }
+    let opened_line = settled(pressed(opened_line, KeyCode::Enter, KeyModifiers::NONE));
+    vec![
+        preset("results", found("gstin")),
+        preset("empty", opened()),
+        preset("searching", searching),
+        preset("no-match", found("zoho")),
+        preset("capped", found("row_")),
+        preset("error", failed),
+        preset("opened", opened_line),
+    ]
+}
+
+/// The current worktree's files, as abcd lists them.
+fn listed_files(app: &App) -> Vec<String> {
+    match app.current_listing() {
+        Some(Listing::Ready(explorer)) => explorer.files(),
+        _ => Vec::new(),
+    }
+}
+
+/// `app` once any search due has started and every command has been carried
+/// out at once from fake data, highlighting included.
+fn settled(mut app: App) -> App {
+    app.tick(Instant::now() + find::DELAY);
+    while !app.outbox.is_empty() {
+        for cmd in std::mem::take(&mut app.outbox) {
+            match cmd {
+                Cmd::ReadFile { worktree, path } => {
+                    let contents = fake::read(&path);
+                    app.apply(Msg::FileRead {
+                        worktree,
+                        path,
+                        contents,
+                    });
+                }
+                Cmd::Highlight {
+                    worktree,
+                    path,
+                    source,
+                    lang,
+                } => {
+                    let spans = highlight::highlight(&source, lang);
+                    app.apply(Msg::Highlighted {
+                        worktree,
+                        path,
+                        spans,
+                    });
+                }
+                Cmd::Search {
+                    id,
+                    query,
+                    max_lines,
+                    ..
+                } => {
+                    let (files, capped) = fake::search(&listed_files(&app), &query, max_lines);
+                    app.apply(Msg::Found { id, files });
+                    app.apply(Msg::SearchDone { id, capped });
+                }
+                Cmd::Copy(_) => {}
+            }
+        }
+    }
+    app
+}
+
 fn pressed(mut app: App, code: KeyCode, modifiers: KeyModifiers) -> App {
     app.handle_key(KeyEvent::new(code, modifiers));
     app
@@ -335,6 +431,32 @@ fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
     while !app.outbox.is_empty() {
         for cmd in std::mem::take(&mut app.outbox) {
             match cmd {
+                Cmd::Search {
+                    worktree,
+                    id,
+                    query,
+                    max_lines,
+                } => {
+                    let Some(Listing::Ready(explorer)) = app.listings.get(&worktree) else {
+                        let why = "the worktree isn't listed yet".to_string();
+                        app.apply(Msg::SearchFailed { id, why });
+                        continue;
+                    };
+                    let files = explorer.files();
+                    let tx = tx.clone();
+                    std::thread::spawn(move || {
+                        let (found, capped) = fake::search(&files, &query, max_lines);
+                        // A file at a time, as abcd streams them.
+                        for file in found {
+                            std::thread::sleep(Duration::from_millis(40));
+                            let _ = tx.send(Msg::Found {
+                                id,
+                                files: vec![file],
+                            });
+                        }
+                        let _ = tx.send(Msg::SearchDone { id, capped });
+                    });
+                }
                 Cmd::Copy(text) => {
                     // On this thread: OSC 52 goes to the terminal between frames.
                     if let Err(why) = clipboard::copy(&text, &mut stdout()) {
@@ -374,7 +496,7 @@ pub fn run(args: Args) -> Result<()> {
     match args.screen {
         Screen::Panic => return run_panic(),
         Screen::Icons => return run_catalog(args.state.as_deref(), Theme::resolve(args.theme)),
-        Screen::Frame | Screen::Explorer | Screen::Viewer | Screen::Switcher => {}
+        Screen::Frame | Screen::Explorer | Screen::Viewer | Screen::Switcher | Screen::Find => {}
     }
     let presets = presets(args.screen);
     let names = || {
@@ -412,6 +534,12 @@ pub fn run(args: Args) -> Result<()> {
             loop {
                 if let Ok(msg) = rx.try_recv() {
                     app.apply(msg);
+                    break;
+                }
+                // A search starts once typing pauses.
+                app.tick(Instant::now());
+                if !app.outbox.is_empty() {
+                    serve(&mut app, &tx);
                     break;
                 }
                 if event::poll(Duration::from_millis(30))? {

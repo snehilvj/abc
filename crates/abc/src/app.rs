@@ -3,13 +3,14 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use abc_core::model::{Head, Repo, Worktree};
+use abc_core::model::{FoundFile, Head, Repo, Worktree};
 use crokey::KeyCombination;
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tui_input::Input;
 use tui_input::backend::crossterm::to_input_request;
 
 use crate::explorer::{Listing, NodePath};
+use crate::find;
 use crate::highlight::{self, Lang};
 use crate::keys::{self, Action, Context, Feed, Keymap};
 use crate::layout::Widths;
@@ -23,6 +24,13 @@ use crate::viewer::{Document, Place, Viewer, reference};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cmd {
     Copy(String),
+    /// Finds `query` in the worktree's files; answers come as `Found`, then `SearchDone`.
+    Search {
+        worktree: PathBuf,
+        id: u64,
+        query: String,
+        max_lines: usize,
+    },
     ReadFile {
         worktree: PathBuf,
         path: String,
@@ -50,6 +58,20 @@ pub enum Msg {
     },
     /// A copy didn't reach the clipboard, and why.
     CopyFailed(String),
+    /// Some of what a search found, a file or more at a time.
+    Found {
+        id: u64,
+        files: Vec<FoundFile>,
+    },
+    /// A search finished; `capped` if more lines matched than it returns.
+    SearchDone {
+        id: u64,
+        capped: bool,
+    },
+    SearchFailed {
+        id: u64,
+        why: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,6 +198,10 @@ pub struct App {
     pub highlight: bool,
     /// The switcher, while it's open; it takes every key.
     pub switcher: Option<Switcher>,
+    /// Find in files, kept when closed so it opens on the last search.
+    pub find: find::Find,
+    /// Whether find in files is open; it takes every key.
+    pub find_open: bool,
     /// Seconds since the Unix epoch, for "2h ago". The loop that runs the app keeps it current.
     pub now: u64,
     pub quit: bool,
@@ -212,6 +238,8 @@ impl App {
             search: None,
             highlight: false,
             switcher: None,
+            find: find::Find::default(),
+            find_open: false,
             now: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
@@ -266,6 +294,9 @@ impl App {
         self.status = None;
         if self.switcher.is_some() {
             return self.switcher_key(event);
+        }
+        if self.find_open {
+            return self.find_key(event);
         }
         if self.prompt.is_some() {
             return self.prompt_key(event);
@@ -356,6 +387,7 @@ impl App {
             Action::CopyReference => self.copy_reference(),
             Action::Switcher | Action::FindWorktree => self.open_switcher(Mode::Worktrees),
             Action::FindFile => self.open_switcher(Mode::Files),
+            Action::FindInFiles => self.open_find(),
             Action::Down | Action::Up | Action::First | Action::Last | Action::Open
                 if self.context() == Context::Explorer =>
             {
@@ -791,6 +823,104 @@ impl App {
         }
     }
 
+    /// Opens find in files on the last search. Its results stand unless the
+    /// worktree changed since, when the search runs again here.
+    fn open_find(&mut self) {
+        if self.current.is_none() {
+            return;
+        }
+        self.find_open = true;
+        if self.find.worktree != self.current {
+            self.find.worktree = self.current.clone();
+            self.start_search();
+        }
+    }
+
+    /// Starts a search for find's query, if it has one.
+    fn start_search(&mut self) {
+        if let (Some(worktree), Some((id, query))) = (self.find.worktree.clone(), self.find.start())
+        {
+            self.outbox.push(Cmd::Search {
+                worktree,
+                id,
+                query,
+                max_lines: find::MAX_LINES,
+            });
+        }
+    }
+
+    /// Time passing: starts find's search once typing has paused. The loop
+    /// that runs the app calls it between keys.
+    pub fn tick(&mut self, now: std::time::Instant) {
+        if self.find.due(now) {
+            self.start_search();
+        }
+    }
+
+    /// A key for find in files: enter opens the selected line, esc closes,
+    /// the arrows move, and the rest edit the query.
+    fn find_key(&mut self, event: KeyEvent) {
+        match event.code {
+            KeyCode::Esc => self.find_open = false,
+            KeyCode::Enter => {
+                if let Some((path, number)) = self.find.selected.clone() {
+                    self.find_open = false;
+                    self.open_found(&path, number as usize - 1);
+                }
+            }
+            KeyCode::Down => self.find.down(),
+            KeyCode::Up => self.find.up(),
+            _ => {
+                if let Some(request) = to_input_request(&Event::Key(event))
+                    && self
+                        .find
+                        .input
+                        .handle(request)
+                        .is_some_and(|changed| changed.value)
+                {
+                    self.find.edited(std::time::Instant::now());
+                }
+            }
+        }
+    }
+
+    /// Opens a file find in files found at `line`, with the query as the
+    /// viewer's search so its matches stay highlighted and `n` goes on.
+    fn open_found(&mut self, path: &str, line: usize) {
+        self.search = Some(search::Search::new(self.find.query.clone(), true));
+        self.highlight = true;
+        self.open_target(Target::File(path.to_string()));
+        let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) else {
+            return;
+        };
+        if viewer.has_text() {
+            self.land(line);
+        } else {
+            viewer.landing = Some(line);
+        }
+    }
+
+    /// Puts the viewer's cursor on the search's first match in `line`, as a
+    /// jump, and says which match it is.
+    fn land(&mut self, line: usize) {
+        let Some(search) = self.search.clone() else {
+            return;
+        };
+        let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) else {
+            return;
+        };
+        let col = viewer
+            .lines()
+            .get(line)
+            .and_then(|l| search.matches(l).first().map(|m| m.0))
+            .unwrap_or(0);
+        viewer.jump(Pos::new(line, col));
+        let at = viewer.cursor;
+        let (index, total) = search.count(viewer.lines(), at);
+        let summary = format!("/{} · {index} of {total}", search.pattern);
+        self.status = Some(Status::new(StatusKind::Plain, summary));
+    }
+
     /// Puts `text` on the clipboard and says what went.
     fn copy(&mut self, text: String, what: String) {
         self.outbox.push(Cmd::Copy(text));
@@ -877,16 +1007,22 @@ impl App {
                     Ok(contents) => Document::from_contents(contents, viewer.name()),
                     Err(why) => Document::Failed(why),
                 };
+                let landing = viewer.landing.take().filter(|_| viewer.has_text());
                 if let Document::Text(text) = &viewer.document
                     && text.lang != Lang::Plain
                 {
                     let (source, lang) = (text.source(), text.lang);
                     self.outbox.push(Cmd::Highlight {
-                        worktree,
+                        worktree: worktree.clone(),
                         path,
                         source,
                         lang,
                     });
+                }
+                if let Some(line) = landing
+                    && self.current.as_ref() == Some(&worktree)
+                {
+                    self.land(line);
                 }
             }
             Msg::Highlighted {
@@ -907,6 +1043,9 @@ impl App {
                 let text = format!("couldn't copy: {why}");
                 self.status = Some(Status::new(StatusKind::Error, text));
             }
+            Msg::Found { id, files } => self.find.found(id, files),
+            Msg::SearchDone { id, capped } => self.find.done(id, capped),
+            Msg::SearchFailed { id, why } => self.find.failed(id, why),
         }
     }
 
@@ -1601,6 +1740,117 @@ mod tests {
             app.current,
             Some(fake::current()),
             "tab didn't switch worktrees"
+        );
+    }
+
+    /// Answers the search waiting in the outbox from the fake files.
+    fn answer_search(app: &mut App) -> String {
+        let Some(Cmd::Search {
+            worktree,
+            id,
+            query,
+            max_lines,
+        }) = app.outbox.pop()
+        else {
+            panic!("no search asked for")
+        };
+        let files = match app.listings.get(&worktree) {
+            Some(Listing::Ready(e)) => e.files(),
+            _ => panic!("not listed"),
+        };
+        let (found, capped) = fake::search(&files, &query, max_lines);
+        app.apply(Msg::Found { id, files: found });
+        app.apply(Msg::SearchDone { id, capped });
+        query
+    }
+
+    fn after_a_pause(app: &mut App) {
+        app.tick(std::time::Instant::now() + find::DELAY);
+    }
+
+    #[test]
+    fn space_slash_finds_in_files_once_typing_pauses() {
+        let mut app = with_files();
+        press(&mut app, "space / g s t i n");
+        assert!(app.find_open);
+        assert!(app.outbox.is_empty(), "nothing asked while typing");
+        after_a_pause(&mut app);
+        assert_eq!(answer_search(&mut app), "gstin");
+        assert_eq!((app.find.lines(), app.find.files.len()), (25, 5));
+        assert_eq!(
+            app.find.selected,
+            Some(("apps/web/src/pages/home.tsx".into(), 5))
+        );
+    }
+
+    #[test]
+    fn enter_opens_the_line_found_with_its_matches_highlighted() {
+        let mut app = with_files();
+        press(&mut app, "space / g s t i n");
+        after_a_pause(&mut app);
+        answer_search(&mut app);
+        for _ in 0..7 {
+            key(&mut app, KeyCode::Down);
+        }
+        key(&mut app, KeyCode::Enter);
+        assert_eq!(
+            (app.find_open, app.focus, app.highlight),
+            (false, Focus::Viewer, true)
+        );
+        let path = "packages/integrations/gst/client.ts".to_string();
+        assert_eq!(
+            app.outbox,
+            [Cmd::ReadFile {
+                worktree: fake::current(),
+                path: path.clone()
+            }]
+        );
+        app.outbox.clear();
+        app.apply(Msg::FileRead {
+            worktree: fake::current(),
+            path: path.clone(),
+            contents: fake::read(&path),
+        });
+        assert_eq!(
+            cursor(&app),
+            (3, 9),
+            "on line 4's match once the file arrives"
+        );
+        assert_eq!(status(&app), "/gstin · 2 of 5");
+        press_drawn(&mut app, "n");
+        assert_eq!(cursor(&app), (9, 15), "n goes on through the file");
+    }
+
+    #[test]
+    fn find_opens_again_on_the_last_search() {
+        let mut app = with_files();
+        press(&mut app, "space / g s t i n");
+        after_a_pause(&mut app);
+        answer_search(&mut app);
+        key(&mut app, KeyCode::Esc);
+        assert!(!app.find_open);
+        press(&mut app, "space /");
+        assert_eq!((app.find.input.value(), app.find.lines()), ("gstin", 25));
+        assert!(app.outbox.is_empty(), "not searched again");
+    }
+
+    #[test]
+    fn find_in_another_worktree_searches_again() {
+        let mut app = with_files();
+        press(&mut app, "space / g s t i n");
+        after_a_pause(&mut app);
+        answer_search(&mut app);
+        key(&mut app, KeyCode::Esc);
+        press_drawn(&mut app, "h j enter space /");
+        let Some(Cmd::Search {
+            worktree, query, ..
+        }) = app.outbox.last()
+        else {
+            panic!("no search")
+        };
+        assert_eq!(
+            (worktree.as_path(), query.as_str()),
+            (Path::new("~/code/wt/privue-platform/gst-rounding"), "gstin")
         );
     }
 

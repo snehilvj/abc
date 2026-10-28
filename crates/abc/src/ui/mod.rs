@@ -3,6 +3,7 @@
 pub mod catalog;
 pub mod dialog;
 pub mod explorer;
+pub mod find;
 pub mod label;
 pub mod sidebar;
 pub mod switcher;
@@ -57,6 +58,10 @@ pub fn draw_buffer(buf: &mut Buffer, area: Rect, app: &App, theme: &Theme) {
     if let Some(s) = &app.switcher {
         fade(buf, area, theme);
         switcher::draw(buf, area, app, s, theme);
+    }
+    if app.find_open {
+        fade(buf, area, theme);
+        find::draw(buf, area, app, theme);
     }
 }
 

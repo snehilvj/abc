@@ -480,3 +480,44 @@ pub fn viewer(path: &str) -> crate::viewer::Viewer {
     };
     Viewer::new(path.split('/').map(String::from).collect(), document)
 }
+
+/// What abcd's find in files would send for `query` over `files`: text files
+/// only, no more than `max_lines` lines, and whether more matched.
+pub fn search(
+    files: &[String],
+    query: &str,
+    max_lines: usize,
+) -> (Vec<abc_core::model::FoundFile>, bool) {
+    use abc_core::model::{FileContents, FoundFile, FoundLine};
+    let search = crate::search::Search::new(query, true);
+    let (mut found, mut lines) = (Vec::new(), 0);
+    for path in files {
+        let Ok(FileContents::Text { text }) = read(path) else {
+            continue;
+        };
+        let mut file = FoundFile {
+            path: path.clone(),
+            lines: Vec::new(),
+        };
+        for (i, line) in text.split('\n').enumerate() {
+            if search.matches(line).is_empty() {
+                continue;
+            }
+            if lines == max_lines {
+                if !file.lines.is_empty() {
+                    found.push(file);
+                }
+                return (found, true);
+            }
+            lines += 1;
+            file.lines.push(FoundLine {
+                number: i as u32 + 1,
+                text: line.to_string(),
+            });
+        }
+        if !file.lines.is_empty() {
+            found.push(file);
+        }
+    }
+    (found, false)
+}

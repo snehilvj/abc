@@ -126,3 +126,18 @@ pub enum FileContents {
         limit: u64,
     },
 }
+
+/// A file with lines that matched a find in files, as abcd sends it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoundFile {
+    /// Relative to the worktree, such as `src/main.rs`.
+    pub path: String,
+    pub lines: Vec<FoundLine>,
+}
+
+/// A line that matched: its number, counting from 1, and its text as the file has it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FoundLine {
+    pub number: u32,
+    pub text: String,
+}

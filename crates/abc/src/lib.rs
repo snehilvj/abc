@@ -4,6 +4,7 @@ pub mod app;
 pub mod clipboard;
 pub mod explorer;
 pub mod fake;
+pub mod find;
 pub mod gallery;
 pub mod highlight;
 pub mod icons;

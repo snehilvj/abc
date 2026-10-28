@@ -117,28 +117,7 @@ fn query<'a>(switcher: &'a Switcher, inner: usize, theme: &Theme) -> Row<'a> {
         Source::Loading => "loading…".into(),
         Source::Failed(_) | Source::NoWorktree => String::new(),
     };
-    // "> ", the text, the cursor's cell, a blank, then the count.
-    let room = inner.saturating_sub(2 + 1 + 1 + count.chars().count());
-    let scroll = switcher.input.visual_scroll(room);
-    let mut skipped = 0;
-    let shown: String = switcher
-        .input
-        .value()
-        .chars()
-        .skip_while(|c| {
-            let skip = skipped < scroll;
-            if skip {
-                skipped += crate::viewer::width(&[*c]);
-            }
-            skip
-        })
-        .collect();
-    Row::new(vec![
-        Span::styled("> ", theme.accent()),
-        Span::styled(shown, theme.bold()),
-    ])
-    .right(Span::styled(count, theme.dim()))
-    .cursor(2 + switcher.input.visual_cursor() - scroll)
+    dialog::query(&switcher.input, count, inner, theme)
 }
 
 /// What to say instead of, or before, the results.

@@ -7,6 +7,8 @@ use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 
+use tui_input::Input;
+
 use crate::theme::Theme;
 
 /// A line in a dialog: text from the left, text against the right, maybe
@@ -53,6 +55,32 @@ pub struct Dialog<'a> {
     pub body: Vec<Row<'a>>,
     /// Keys and what they do, as the key bar shows them.
     pub footer: Vec<(String, &'a str)>,
+}
+
+/// A query being typed: "> " and the text with its cursor, scrolled to keep
+/// the cursor in sight, and `count` on the right.
+pub fn query<'a>(input: &'a Input, count: String, inner: usize, theme: &Theme) -> Row<'a> {
+    // "> ", the text, the cursor's cell, a blank, then the count.
+    let room = inner.saturating_sub(2 + 1 + 1 + count.chars().count());
+    let scroll = input.visual_scroll(room);
+    let mut skipped = 0;
+    let shown: String = input
+        .value()
+        .chars()
+        .skip_while(|c| {
+            let skip = skipped < scroll;
+            if skip {
+                skipped += crate::viewer::width(&[*c]);
+            }
+            skip
+        })
+        .collect();
+    Row::new(vec![
+        Span::styled("> ", theme.accent()),
+        Span::styled(shown, theme.bold()),
+    ])
+    .right(Span::styled(count, theme.dim()))
+    .cursor(2 + input.visual_cursor() - scroll)
 }
 
 /// Keys and what they do, the key bar's way: "enter open · esc close".
