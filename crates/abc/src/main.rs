@@ -24,6 +24,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// The repositories abc knows: list, add and remove them.
+    #[command(subcommand)]
+    Repo(cli::RepoCommand),
     /// The background server, abcd.
     #[command(subcommand)]
     Server(cli::Server),
@@ -46,6 +49,9 @@ fn main() -> anyhow::Result<ExitCode> {
         Command::Gallery(gallery) => abc::gallery::run(gallery).map(|()| ExitCode::SUCCESS),
         Command::Config(config) => Ok(cli::config(config, &paths()?)),
         Command::Logs(logs) => cli::logs(&logs, &paths()?),
+        Command::Repo(repo) => tokio::runtime::Runtime::new()
+            .context("starting the runtime")?
+            .block_on(cli::repo(repo, &paths()?)),
         Command::Server(server) => tokio::runtime::Runtime::new()
             .context("starting the runtime")?
             .block_on(cli::server(server, &paths()?)),

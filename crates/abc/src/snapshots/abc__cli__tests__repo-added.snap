@@ -1,0 +1,5 @@
+---
+source: crates/abc/src/cli.rs
+expression: "repo_added(&added, home)"
+---
+added ecourts · ~/code/ecourts · 2 worktrees

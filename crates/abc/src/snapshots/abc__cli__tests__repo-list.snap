@@ -1,0 +1,8 @@
+---
+source: crates/abc/src/cli.rs
+expression: "repo_list(&repos(), home)"
+---
+NAME             WORKTREES  PATH
+privue-platform  6          ~/code/privue-platform
+ecourts          2          ~/code/ecourts
+old-scraper      missing    ~/code/old-scraper

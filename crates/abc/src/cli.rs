@@ -1,5 +1,5 @@
-//! The commands besides the TUI: `abc server …`, `abc config …` and `abc
-//! logs`. Output is plain text without icons, so it pipes and greps cleanly.
+//! The commands besides the TUI: `abc repo …`, `abc server …`, `abc config
+//! …` and `abc logs`. Output is plain text without icons, so it pipes and greps cleanly.
 //! `server status`, `server stop`, `config` and `logs` never start abcd.
 
 use std::fs::File;
@@ -10,10 +10,27 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use abc_core::build::BUILD_ID;
 use abc_core::client::{self, Client};
+use abc_core::model::Repo;
 use abc_core::paths::Paths;
-use abc_core::protocol::{Call, ServerStatus};
+use abc_core::protocol::{self, Call, Repos, ServerStatus};
 use abc_core::settings::Settings;
 use anyhow::Context as _;
+
+#[derive(Debug, clap::Subcommand)]
+pub enum RepoCommand {
+    /// The repositories added, in the order they were added.
+    List,
+    /// Add the repository at a folder, or clone one from a git URL and add it.
+    Add {
+        /// A folder on this machine, or a git URL.
+        path: String,
+        /// The name to add it under; by default the folder's or the repository's.
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Forget a repository. Its files stay on disk.
+    Remove { name: String },
+}
 
 #[derive(Debug, clap::Subcommand)]
 pub enum Server {
@@ -115,6 +132,123 @@ pub fn check_settings(file: &Path) -> Result<Settings, Vec<String>> {
     let settings = Settings::load(file).map_err(|e| vec![Settings::describe(&e)])?;
     crate::keys::Keymap::from_settings(&settings.keys)?;
     Ok(settings)
+}
+
+/// `abc repo …`, through abcd, starting it if need be.
+pub async fn repo(command: RepoCommand, paths: &Paths) -> anyhow::Result<ExitCode> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let client = connect(paths).await?;
+    let result = match command {
+        RepoCommand::List => client
+            .call::<Repos>(Call::RepoList)
+            .await
+            .map(|r| repo_list(&r.repos, home.as_deref())),
+        RepoCommand::Add { path, name } => {
+            let path = absolute(&path);
+            client
+                .call::<protocol::Added>(Call::RepoAdd { path, name })
+                .await
+                .map(|added| repo_added(&added, home.as_deref()))
+        }
+        RepoCommand::Remove { name } => {
+            let path = client
+                .call::<Repos>(Call::RepoList)
+                .await
+                .ok()
+                .and_then(|r| r.repos.into_iter().find(|r| r.name == name))
+                .map(|r| tilde(&r.path, home.as_deref()));
+            client
+                .call::<Repos>(Call::RepoRemove { name: name.clone() })
+                .await
+                .map(|_| repo_removed(&name, path.as_deref()))
+                .map_err(|mut failure| {
+                    if failure.code == protocol::ErrorCode::NotFound {
+                        failure.message.push_str(" (see: abc repo list)");
+                    }
+                    failure
+                })
+        }
+    };
+    match result {
+        Ok(text) => {
+            print!("{text}");
+            Ok(ExitCode::SUCCESS)
+        }
+        Err(failure) => {
+            eprintln!("error: {}", failure.message);
+            Ok(ExitCode::FAILURE)
+        }
+    }
+}
+
+/// A folder relative to where abc runs, made absolute so abcd reads it the
+/// same; `~` and git URLs go as they are.
+fn absolute(path: &str) -> String {
+    let path = path.trim();
+    if path.starts_with('~') || abc_core::source::is_url(path) {
+        return path.into();
+    }
+    std::path::absolute(path).map_or_else(|_| path.into(), |p| p.display().to_string())
+}
+
+/// abcd, started or restarted as need be; a note on stderr if this abc is stale.
+async fn connect(paths: &Paths) -> anyhow::Result<Client> {
+    use abc_core::client::Startup;
+    let (client, startup) = client::start(paths, &sibling()?, &client::hello()).await?;
+    match startup {
+        Startup::Ready { .. } => {}
+        Startup::Restarted { from } => eprintln!("note: restarted abcd, which was build {from}"),
+        Startup::StaleClient => eprintln!(
+            "note: this abc ({BUILD_ID}) is older or newer than abcd ({}); reopen it soon",
+            client.server.build
+        ),
+    }
+    Ok(client)
+}
+
+/// `abc repo list`: a table, or how to add the first.
+pub fn repo_list(repos: &[Repo], home: Option<&Path>) -> String {
+    if repos.is_empty() {
+        return "No repositories. Add one with: abc repo add <path>\n".into();
+    }
+    let width = repos
+        .iter()
+        .map(|r| r.name.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(4);
+    let mut text = format!("{:<width$}  WORKTREES  PATH\n", "NAME");
+    for repo in repos {
+        let worktrees = if repo.is_missing() {
+            "missing".to_string()
+        } else {
+            repo.worktrees().len().to_string()
+        };
+        let path = tilde(&repo.path, home);
+        text.push_str(&format!("{:<width$}  {worktrees:<9}  {path}\n", repo.name));
+    }
+    text
+}
+
+/// `abc repo add`'s report.
+pub fn repo_added(added: &protocol::Added, home: Option<&Path>) -> String {
+    let Some(repo) = added.repos.iter().find(|r| r.name == added.name) else {
+        return format!("added {}\n", added.name);
+    };
+    let worktrees = crate::app::plural(repo.worktrees().len(), "worktree");
+    format!(
+        "added {} · {} · {worktrees}\n",
+        added.name,
+        tilde(&repo.path, home)
+    )
+}
+
+/// `abc repo remove`'s report.
+pub fn repo_removed(name: &str, path: Option<&str>) -> String {
+    match path {
+        Some(path) => format!("removed {name} · files left on disk at {path}\n"),
+        None => format!("removed {name}\n"),
+    }
 }
 
 /// The abcd binary beside this abc.
@@ -254,6 +388,40 @@ mod tests {
         let text = "1\n2\n3\n4\n";
         let lines = last_lines(&mut text.as_bytes(), 2).unwrap();
         assert_eq!(lines, ["3", "4"]);
+    }
+
+    fn repos() -> Vec<Repo> {
+        let mut repos = crate::fake::repos_with_variants();
+        for repo in &mut repos {
+            repo.path = Path::new("/Users/me/code").join(&repo.name);
+        }
+        repos
+    }
+
+    #[test]
+    fn repo_commands_read_like_their_design() {
+        let home = Some(Path::new("/Users/me"));
+        insta::assert_snapshot!("repo-list", repo_list(&repos(), home));
+        insta::assert_snapshot!("repo-list-empty", repo_list(&[], home));
+        let added = protocol::Added {
+            name: "ecourts".into(),
+            repos: repos(),
+        };
+        insta::assert_snapshot!("repo-added", repo_added(&added, home));
+        insta::assert_snapshot!(
+            "repo-removed",
+            repo_removed("ecourts", Some("~/code/ecourts"))
+        );
+    }
+
+    #[test]
+    fn relative_folders_are_made_absolute_but_not_urls_or_home() {
+        assert!(Path::new(&absolute("code/app")).is_absolute());
+        assert_eq!(absolute("~/code/app"), "~/code/app");
+        assert_eq!(
+            absolute(" git@github.com:o/r.git "),
+            "git@github.com:o/r.git"
+        );
     }
 
     #[test]

@@ -1,0 +1,5 @@
+---
+source: crates/abc/src/cli.rs
+expression: "repo_list(&[], home)"
+---
+No repositories. Add one with: abc repo add <path>

@@ -1,0 +1,5 @@
+---
+source: crates/abc/src/cli.rs
+expression: "repo_removed(\"ecourts\", Some(\"~/code/ecourts\"))"
+---
+removed ecourts · files left on disk at ~/code/ecourts
