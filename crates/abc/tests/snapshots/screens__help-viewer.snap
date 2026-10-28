@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
+│  WORKTREES                ┌ Keys · Viewer ───────────────────────────────────────────────┐                           │
+│    privue-platform       │                                                              │tions/gst/verify.ts · ts ──┤
+│    gst-check             │ Viewer                                                       │ normalise } from "../../… │
+│       feat/gst-check    │   h j k l  ← ↓ ↑ →   move; a count first repeats             │ype { GstClient } from ".… │
+│     gst-rounding          │   w b e  W B E       words · WORDS                           │                           │
+│       fix/gst-rounding   │   0 ^ $  home end    line start · first non-blank · end      │ype GstInput = {           │
+│     ledger-round          │   gg G               top · end; with a count, that line      │ string                    │
+│       fix/ledger-round  │   H M L              top · middle · bottom of the screen     │ame: string                │
+│       privue-platform    │   { }  %             paragraph · matching bracket            │: string                   │
+│       main               │   f t F T  ; ,       to a character · again                  │                           │
+│                           │   ctrl-d ctrl-u      half a page down · up                   │                           │
+│    ecourts               │   ctrl-f ctrl-b      a page down · up                        │ype Result =               │
+│     gst-lookup            │   ctrl-e ctrl-y  zz  scroll a line · centre the cursor       │nd: "ok"; gstin: string }  │
+│       feat/gst-lookup    │   / n N  * #         find · next · this word                 │nd: "mismatch"; reason: s… │
+│     ocr-retry             │   :                  go to a line                            │                           │
+│       feat/ocr-retry    │   v V  y Y           select · copy · copy lines              │s a GSTIN against the reg… │
+│       ecourts            │   gy                 copy @path:lines for Claude Code        │ls the customer gave us.   │
+│       main               │   ctrl-o             back from a jump                        │sync function verify(      │
+│                           │   esc                back out a step; then the explorer      │ GstInput,                 │
+│                           │                                                              │: GstClient,               │
+│                           │ Leader                                                       │se<Result> {               │
+│                           │   space f            find a file                             │a = normalise(input)       │
+│                           │   space w            find a worktree                         │record = await client.loo… │
+│                           │   space /            find in files                           │ecord) {                   │
+│                           │   space r a          add repository                          │rn mismatch(a, "not regis… │
+│                           │   space r d          remove repository                       │                           │
+│                           │   space ?            keys for this pane                      │cord.legalName !== a.lega… │
+│                           │                                                              │rn mismatch(a, "name diff… │
+│                           │ Everywhere                                                   │                           │
+│                           │   ctrl-p             switcher                                │state && record.state !==… │
+│                           │   tab                last worktree                           │rn mismatch(a, `state is … │
+│                           │   ?                  this help                               │                           │
+│                           │   q                  quit (abcd keeps running)               │ { kind: "ok", gstin: a.g… │
+│                           │                                                              │                           │
+│                           │ Change any key in [keys] in config.toml.                     │                           │
+│                           ├──────────────────────────────────────────────────────────────┤ mismatch(a: GstInput, re… │
+├───────────────────────────│ esc or ? close                                               │──────── 1:1 · 1–34 of 58 ─┤
+│ h j k l move · w b e words└──────────────────────────────────────────────────────────────┘s · ? help · q quit        │
+└─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘

@@ -1,0 +1,44 @@
+---
+source: crates/abc/tests/screens.rs
+expression: screen
+---
+┌ abc · privue-platform / gst-check ·   feat/gst-check ·   #142 open ·   checks passing · approved ──────────── dev ┐
+│  WORKTREES                           │ Code                                                                          │
+│    privue-platform                  ├─ ~/code/wt/privue-platform/gst-check ┬─   …integrations/gst/verify.ts · ts ──┤
+│    gst-check               #142   │   .github                           │  1  import { normalise } from "../../… │
+│       feat/gst-check      3    2  │   apps                              │  2  import type { GstClient } from ".… │
+│     gst-rounding            #139   │   data                              │  3                                     │
+│       fix/gst-rounding   ┌ Keys · Explorer ─────────────────────────────────────────────┐ype GstInput = {           │
+│     ledger-round          │                                                              │ string                    │
+│       fix/ledger-round  │ Explorer                                                     │ame: string                │
+│       privue-platform    │   j k  ↓ ↑           move                                    │: string                   │
+│       main               │   gg G               first · last                            │                           │
+│                           │   enter  o           open file · expand or collapse folder   │                           │
+│    ecourts               │   gy                 copy @path for Claude Code              │ype Result =               │
+│     gst-lookup            │                                                              │nd: "ok"; gstin: string }  │
+│       feat/gst-lookup    │ Leader                                                       │nd: "mismatch"; reason: s… │
+│     ocr-retry             │   space f            find a file                             │                           │
+│       feat/ocr-retry    │   space w            find a worktree                         │s a GSTIN against the reg… │
+│       ecourts            │   space /            find in files                           │ls the customer gave us.   │
+│       main               │   space r a          add repository                          │sync function verify(      │
+│                           │   space r d          remove repository                       │ GstInput,                 │
+│                           │   space ?            keys for this pane                      │: GstClient,               │
+│                           │                                                              │se<Result> {               │
+│                           │ Everywhere                                                   │a = normalise(input)       │
+│                           │   ctrl-p             switcher                                │record = await client.loo… │
+│                           │   tab                last worktree                           │ecord) {                   │
+│                           │   h l  ← →           move focus between panes                │rn mismatch(a, "not regis… │
+│                           │   ?                  this help                               │                           │
+│                           │   q                  quit (abcd keeps running)               │cord.legalName !== a.lega… │
+│                           │                                                              │rn mismatch(a, "name diff… │
+│                           │ Change any key in [keys] in config.toml.                     │                           │
+│                           ├──────────────────────────────────────────────────────────────┤state && record.state !==… │
+│                           │ esc or ? close                                               │rn mismatch(a, `state is … │
+│                           └──────────────────────────────────────────────────────────────┘                           │
+│                                      │                                      │ 31    return { kind: "ok", gstin: a.g… │
+│                                      │                                      │ 32  }                                  │
+│                                      │                                      │ 33                                     │
+│                                      │                                      │ 34  function mismatch(a: GstInput, re… │
+├──────────────────────────────────────┴──────────────────────────────────────┴─────────────────────────── 1–34 of 58 ─┤
+│ j k move · enter open · gg G top/end · h l focus · space commands · ^p find · tab last worktree · ? help · q quit    │
+└─────────────────────────────────────────────────────────────────────────────────────────────── 2 repos · 7 worktrees ┘

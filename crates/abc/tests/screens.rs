@@ -113,6 +113,18 @@ fn remove_repo() {
 }
 
 #[test]
+fn help() {
+    let theme = Theme::dark();
+    for preset in gallery::presets(Screen::Help) {
+        let screen = draw(120, 40, |frame| {
+            let area = frame.area();
+            abc::ui::draw(frame, area, &preset.app, &theme);
+        });
+        insta::assert_snapshot!(format!("help-{}", preset.name), screen);
+    }
+}
+
+#[test]
 fn file_icons() {
     let screen = draw(120, 40, |frame| {
         let area = frame.area();
