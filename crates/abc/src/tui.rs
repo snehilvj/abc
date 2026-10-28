@@ -30,6 +30,8 @@ use crate::{clipboard, highlight, ui};
 
 /// How long to wait between tries to reach abcd again.
 const RECONNECT: Duration = Duration::from_secs(1);
+/// How often to look for a changed settings file.
+const SETTINGS_CHECK: Duration = Duration::from_secs(1);
 
 /// What the session tells the loop.
 enum Net {
@@ -51,16 +53,18 @@ type Replies = tokio::sync::mpsc::UnboundedSender<Msg>;
 pub fn run(paths: Paths) -> Result<()> {
     let (settings, broken) = match crate::cli::check_settings(&paths.config_file()) {
         Ok(settings) => (settings, None),
-        Err(errors) => (Settings::defaults(), Some(errors.join("; "))),
+        Err(errors) => (Settings::defaults(), errors.into_iter().next()),
     };
     let mut app = App::new(paths.profile.name());
     // Ask the terminal for its background before raw mode takes over the input.
     let mut theme = Theme::resolve(theme_choice(&settings.theme, &mut app));
     apply(&settings, &mut app, &mut theme);
     if let Some(why) = broken {
-        let text = format!("{why} · using the defaults");
+        let text = format!("{} · using the defaults", settings::one_line(&why));
         app.status = Some(Status::new(StatusKind::Error, text));
     }
+    let mut watch = settings::Watch::new(&paths.config_file());
+    let mut watched = Instant::now();
 
     let runtime = Runtime::new().context("starting the runtime")?;
     let abcd = crate::cli::sibling()?;
@@ -92,6 +96,13 @@ pub fn run(paths: Paths) -> Result<()> {
                 }
                 if app.tick(Instant::now()) || !app.outbox.is_empty() {
                     break;
+                }
+                if watched.elapsed() >= SETTINGS_CHECK {
+                    watched = Instant::now();
+                    if watch.changed() {
+                        reload(&paths, &mut app, &mut theme);
+                        break;
+                    }
                 }
                 if event::poll(Duration::from_millis(30))? {
                     break;
@@ -188,6 +199,28 @@ fn receive(net: Net, app: &mut App, client: &mut Option<(Arc<Client>, Replies)>)
             app.apply(Msg::ConnectionLost);
         }
         Net::Msg(msg) => app.apply(msg),
+    }
+}
+
+/// Applies the settings file again after it changed, or says why it can't.
+fn reload(paths: &Paths, app: &mut App, theme: &mut Theme) {
+    match crate::cli::check_settings(&paths.config_file()) {
+        Ok(settings) => {
+            // "auto" asked the terminal at startup; it can't be asked again in raw mode.
+            if settings.theme != "auto" {
+                *theme = Theme::resolve(theme_choice(&settings.theme, app));
+            }
+            apply(&settings, app, theme);
+            app.status = Some(Status::new(StatusKind::Info, "settings reloaded"));
+        }
+        Err(errors) => {
+            let why = errors.into_iter().next().unwrap_or_default();
+            let text = format!(
+                "{} · keeping the last good settings",
+                settings::one_line(&why)
+            );
+            app.status = Some(Status::new(StatusKind::Error, text));
+        }
     }
 }
 
@@ -501,6 +534,35 @@ mod tests {
                 .feed(crate::keys::Context::Global, &mut pending, x),
             crate::keys::Feed::Action(crate::keys::Action::Quit)
         );
+    }
+
+    #[test]
+    fn a_changed_settings_file_applies_or_says_why_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_path_buf();
+        let paths = Paths::new(abc_core::paths::Profile::new("dev").unwrap(), move |var| {
+            (var == "HOME").then(|| home.clone().into_os_string())
+        })
+        .unwrap();
+        std::fs::create_dir_all(&paths.config_dir).unwrap();
+        let mut app = App::new("dev");
+        let mut theme = Theme::dark();
+        std::fs::write(
+            paths.config_file(),
+            "theme = \"light\"\n[layout]\nsidebar_width = 30\n",
+        )
+        .unwrap();
+        reload(&paths, &mut app, &mut theme);
+        assert_eq!(app.status.as_ref().unwrap().text, "settings reloaded");
+        assert_eq!((app.widths.sidebar, &theme), (30, &Theme::light()));
+
+        std::fs::write(paths.config_file(), "[layout]\nsidebar_widht = 20\n").unwrap();
+        reload(&paths, &mut app, &mut theme);
+        assert_eq!(
+            app.status.unwrap().text,
+            "config.toml line 2: unknown field `sidebar_widht` · keeping the last good settings"
+        );
+        assert_eq!(app.widths.sidebar, 30, "the last good ones");
     }
 
     #[test]

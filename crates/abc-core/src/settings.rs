@@ -5,7 +5,8 @@
 //! errors.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use confique::Config;
 use serde::Deserialize;
@@ -255,6 +256,52 @@ impl Settings {
     }
 }
 
+/// Notices when a settings file changes: written, created or removed.
+#[derive(Debug, Clone)]
+pub struct Watch {
+    file: PathBuf,
+    seen: Option<(SystemTime, u64)>,
+}
+
+impl Watch {
+    /// Watches `file`, as it is now.
+    pub fn new(file: &Path) -> Self {
+        Self {
+            file: file.to_path_buf(),
+            seen: stamp(file),
+        }
+    }
+
+    /// Whether the file has changed since this was last asked.
+    pub fn changed(&mut self) -> bool {
+        let now = stamp(&self.file);
+        let changed = now != self.seen;
+        self.seen = now;
+        changed
+    }
+}
+
+/// When a file was last written, and its size: a write that keeps the same
+/// time to the tick still changes the size, mostly.
+fn stamp(file: &Path) -> Option<(SystemTime, u64)> {
+    let meta = std::fs::metadata(file).ok()?;
+    Some((meta.modified().ok()?, meta.len()))
+}
+
+/// A settings error as one line for the status line: `config.toml line 2:
+/// unknown field `widht``, without TOML's picture of the line.
+pub fn one_line(why: &str) -> String {
+    let message = why.lines().last().unwrap_or(why).trim();
+    let message = message.split(", expected").next().unwrap_or(message);
+    match why.split("TOML parse error at line ").nth(1) {
+        Some(rest) => {
+            let line: String = rest.chars().take_while(char::is_ascii_digit).collect();
+            format!("config.toml line {line}: {message}")
+        }
+        None => message.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +350,33 @@ mod tests {
         assert!(error.contains("widht"), "{error}");
         let wrong = write(dir.path(), "[sidebar]\nstyle = \"fancy\"\n");
         assert!(Settings::from_file(&wrong).is_err());
+    }
+
+    #[test]
+    fn a_watch_notices_writes_and_removal() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        let mut watch = Watch::new(&file);
+        assert!(!watch.changed(), "nothing yet");
+        std::fs::write(&file, "theme = \"dark\"\n").unwrap();
+        assert!(watch.changed(), "created");
+        assert!(!watch.changed(), "once");
+        std::fs::write(&file, "theme = \"light\"\n").unwrap();
+        assert!(watch.changed(), "written");
+        std::fs::remove_file(&file).unwrap();
+        assert!(watch.changed(), "removed");
+    }
+
+    #[test]
+    fn errors_fit_on_one_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = write(dir.path(), "theme = \"dark\"\n[sidebar]\nwidht = 3\n");
+        let why = Settings::describe(&Settings::from_file(&file).unwrap_err());
+        assert_eq!(one_line(&why), "config.toml line 3: unknown field `widht`");
+        assert_eq!(
+            one_line("keys.global: \"x\": bad"),
+            "keys.global: \"x\": bad"
+        );
     }
 
     #[test]
