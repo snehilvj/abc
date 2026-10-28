@@ -16,6 +16,7 @@ crossterm.workspace = true
 devicons.workspace = true
 ratatui.workspace = true
 terminal-colorsaurus.workspace = true
+tokio.workspace = true
 nucleo.workspace = true
 tree-sitter.workspace = true
 tree-sitter-highlight.workspace = true
@@ -28,6 +29,7 @@ tui-tree-widget.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

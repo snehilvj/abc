@@ -1,0 +1,10 @@
+---
+source: crates/abc/src/cli.rs
+expression: "same.replace(BUILD_ID, \"0.1.0+3f9a2c1e\")"
+---
+abcd is running · profile dev
+  pid       4242
+  build     0.1.0+3f9a2c1e (same as this abc)
+  protocol  1
+  uptime    2h 14m
+  socket    ~/.local/state/abc/dev/abcd.sock

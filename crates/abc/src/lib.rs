@@ -2,6 +2,7 @@
 
 pub mod add_repo;
 pub mod app;
+pub mod cli;
 pub mod clipboard;
 pub mod explorer;
 pub mod fake;

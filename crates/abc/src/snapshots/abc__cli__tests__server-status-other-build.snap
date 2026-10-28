@@ -1,0 +1,10 @@
+---
+source: crates/abc/src/cli.rs
+expression: "other.replace(BUILD_ID, \"0.1.0+3f9a2c1e\")"
+---
+abcd is running · profile dev
+  pid       4242
+  build     0.0.9+0ddba11 (this abc is 0.1.0+3f9a2c1e)
+  protocol  1
+  uptime    45s
+  socket    ~/.local/state/abc/dev/abcd.sock
