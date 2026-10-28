@@ -1,9 +1,19 @@
 //! Where a repository to add comes from: a folder on this machine, or a git
 //! URL to clone. abc and abcd read the text alike.
 
-/// A git URL, such as `https://github.com/owner/repo` or `git@github.com:owner/repo.git`.
+/// A git URL, such as `https://github.com/owner/repo` or
+/// `git@github.com:owner/repo.git`: a scheme (a letter, then letters,
+/// digits, `+`, `-` or `.`) and `://` at its start, or `git@`.
 pub fn is_url(text: &str) -> bool {
-    text.contains("://") || text.starts_with("git@")
+    if text.starts_with("git@") {
+        return true;
+    }
+    let Some((scheme, _)) = text.split_once("://") else {
+        return false;
+    };
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c))
 }
 
 /// The last part of a folder or URL, without `.git`: `repo` for
@@ -80,6 +90,27 @@ mod tests {
         );
         assert_eq!(owner("https://github.com/cli/cli").as_deref(), Some("cli"));
         assert_eq!(owner("ecourts"), None);
+    }
+
+    #[test]
+    fn a_url_starts_with_its_scheme() {
+        for url in [
+            "ssh://git@host/x",
+            "https://h/x",
+            "git+ssh://h/x",
+            "file:///x",
+        ] {
+            assert!(is_url(url), "{url}");
+        }
+        for not in [
+            "--upload-pack= ://x",
+            "notes/with://inside",
+            "://x",
+            "-x://y",
+            "1http://x",
+        ] {
+            assert!(!is_url(not), "{not}");
+        }
     }
 
     #[test]
