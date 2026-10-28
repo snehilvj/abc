@@ -560,12 +560,32 @@ fn keybar_items(app: &App) -> Vec<(String, &'static str)> {
                 "words",
             ),
             (two(HalfPageDown, HalfPageUp), "half page"),
-            (two(First, Last), "top/end"),
+            (two(VisualChars, VisualLines), "select"),
             (one(FocusLeft), "explorer"),
         ],
+        Context::Visual => vec![
+            (
+                format!("{} {} {} {}", one(Left), one(Down), one(Up), one(Right)),
+                "move",
+            ),
+            (
+                format!(
+                    "{} {} {}",
+                    one(WordForward),
+                    one(WordBackward),
+                    one(WordEnd)
+                ),
+                "words",
+            ),
+            (one(Copy), "copy"),
+            (one(OtherEnd), "other end"),
+            (one(ExitVisual), "cancel"),
+        ],
     };
-    items.push((leader, "commands"));
-    if ctx != Context::Viewer {
+    if ctx != Context::Visual {
+        items.push((leader, "commands"));
+    }
+    if !matches!(ctx, Context::Viewer | Context::Visual) {
         items.extend([
             (global(Switcher), "find"),
             (global(LastWorktree), "last worktree"),
@@ -598,6 +618,9 @@ fn status_message(app: &App, theme: &Theme) -> Option<(Option<&'static str>, Str
     if !typed.is_empty() {
         return Some((None, format!("{typed} …"), theme.text));
     }
+    if let Some(mode) = visual_mode(app) {
+        return Some((None, mode, theme.accent));
+    }
     let message = |icon, text: &str, color| Some((Some(icon), text.to_string(), color));
     match &app.connection {
         Connection::Starting => message(icons::SYNC, "starting abcd…", theme.accent),
@@ -628,6 +651,22 @@ fn status_message(app: &App, theme: &Theme) -> Option<(Option<&'static str>, Str
             None => None,
         },
     }
+}
+
+/// Visual mode, as Vim names it, and how much is selected: lines, or
+/// characters within one line.
+fn visual_mode(app: &App) -> Option<String> {
+    if app.context() != Context::Visual {
+        return None;
+    }
+    let (from, to, by_line) = app.current_viewer()?.selected()?;
+    let size = if by_line || from.line != to.line {
+        crate::app::plural(to.line - from.line + 1, "line")
+    } else {
+        crate::app::plural(to.col - from.col + 1, "character")
+    };
+    let mode = if by_line { "VISUAL LINE" } else { "VISUAL" };
+    Some(format!("-- {mode} -- · {size}"))
 }
 
 /// What's typed towards a command that hasn't run yet, as Vim's showcmd

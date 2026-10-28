@@ -3,6 +3,7 @@
 //! Motions are in `motion`; drawing is in `ui::viewer`.
 
 use std::cell::Cell;
+use std::collections::HashMap;
 
 use abc_core::model::FileContents;
 
@@ -26,8 +27,10 @@ pub enum Document {
 
 #[derive(Debug, Clone)]
 pub struct Text {
-    /// The file's lines, tabs already expanded.
+    /// The file's lines as the viewer shows them (see `shown`).
     pub lines: Vec<String>,
+    /// The lines shown differently from the file, as the file has them, for copying.
+    originals: HashMap<usize, String>,
     pub lang: Lang,
     /// Spans per line; None until highlighting finishes (or for plain text).
     pub spans: Option<Vec<Vec<highlight::Span>>>,
@@ -35,12 +38,72 @@ pub struct Text {
 
 impl Text {
     pub fn new(source: &str, lang: Lang) -> Self {
-        let lines = source.split('\n').map(shown).collect();
+        let mut originals = HashMap::new();
+        let lines = source
+            .split('\n')
+            .enumerate()
+            .map(|(i, line)| {
+                let line = line.strip_suffix('\r').unwrap_or(line);
+                let shown = shown(line);
+                if shown != line {
+                    originals.insert(i, line.to_string());
+                }
+                shown
+            })
+            .collect();
         Self {
             lines,
+            originals,
             lang,
             spans: None,
         }
+    }
+
+    /// The text from one place to another, both included, as the file has it.
+    /// By line, it's the whole lines, each ending with a newline.
+    pub fn copy(&self, from: Pos, to: Pos, by_line: bool) -> String {
+        let mut out = String::new();
+        let last = to.line.min(self.lines.len().saturating_sub(1));
+        for i in from.line..=last {
+            let len = self.lines[i].chars().count();
+            let start = if by_line || i > from.line {
+                0
+            } else {
+                from.col
+            };
+            let end = if by_line || i < last {
+                len
+            } else {
+                (to.col + 1).min(len)
+            };
+            out.push_str(&self.original(i, start, end));
+            if by_line || i < last {
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    /// Shown columns `start..end` of line `i`, as the file has them: a tab
+    /// partly in range is copied whole.
+    fn original(&self, i: usize, start: usize, end: usize) -> String {
+        let Some(line) = self.originals.get(&i) else {
+            return self.lines[i]
+                .chars()
+                .skip(start)
+                .take(end.saturating_sub(start))
+                .collect();
+        };
+        let mut col = 0;
+        let mut out = String::new();
+        for c in line.chars() {
+            let width = if c == '\t' { TAB_WIDTH } else { 1 };
+            if col + width > start && col < end {
+                out.push(c);
+            }
+            col += width;
+        }
+        out
     }
 
     /// The lines as one string, for the highlighter.
@@ -59,7 +122,6 @@ impl Text {
 /// and other control characters as their symbols (␛), so a file can't send
 /// the terminal commands.
 fn shown(line: &str) -> String {
-    let line = line.strip_suffix('\r').unwrap_or(line);
     let mut out = String::with_capacity(line.len());
     for c in line.chars() {
         match c {
@@ -95,10 +157,19 @@ pub struct Viewer {
     want: usize,
     /// Where `ctrl-o` goes back to, the latest last.
     jumps: Vec<Pos>,
+    /// Visual mode's selection, from its anchor to the cursor.
+    pub selection: Option<Selection>,
     /// Rows the text took when last drawn, for paging.
     pub(crate) height: Cell<usize>,
     /// The first column on screen. Drawing moves it to keep the cursor in view.
     pub(crate) hscroll: Cell<usize>,
+}
+
+/// Visual mode: where it started, and whether it takes whole lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Selection {
+    pub anchor: Pos,
+    pub by_line: bool,
 }
 
 /// Where `zt`, `zz` and `zb` put the cursor's line.
@@ -121,6 +192,7 @@ impl Viewer {
             cursor: Pos::default(),
             want: 0,
             jumps: Vec::new(),
+            selection: None,
             height: Cell::new(30),
             hscroll: Cell::new(0),
         }
@@ -140,6 +212,61 @@ impl Viewer {
 
     pub fn has_text(&self) -> bool {
         matches!(self.document, Document::Text(_))
+    }
+
+    /// The selection's first and last places, in order, and whether it's by line.
+    pub fn selected(&self) -> Option<(Pos, Pos, bool)> {
+        let s = self.selection?;
+        let (from, to) = if s.anchor <= self.cursor {
+            (s.anchor, self.cursor)
+        } else {
+            (self.cursor, s.anchor)
+        };
+        Some((from, to, s.by_line))
+    }
+
+    /// `v` or `V`: starts visual mode, switches between by character and by
+    /// line, or leaves it when it's already that kind.
+    pub fn visual(&mut self, by_line: bool) {
+        self.selection = match self.selection {
+            Some(s) if s.by_line == by_line => None,
+            Some(s) => Some(Selection { by_line, ..s }),
+            None => Some(Selection {
+                anchor: self.cursor,
+                by_line,
+            }),
+        };
+    }
+
+    /// `o`: the cursor goes to the selection's other end.
+    pub fn other_end(&mut self) {
+        if let Some(s) = &mut self.selection {
+            let anchor = std::mem::replace(&mut s.anchor, self.cursor);
+            self.go(anchor);
+        }
+    }
+
+    /// The selection's text, as the file has it; visual mode ends with the
+    /// cursor at its start, as Vim leaves it after a yank.
+    pub fn take_selection(&mut self) -> Option<(String, Pos, Pos, bool)> {
+        let (from, to, by_line) = self.selected()?;
+        let Document::Text(text) = &self.document else {
+            return None;
+        };
+        let copied = text.copy(from, to, by_line);
+        self.selection = None;
+        self.go(from);
+        Some((copied, from, to, by_line))
+    }
+
+    /// `count` lines from the cursor's, as the file has them.
+    pub fn copy_lines(&self, count: usize) -> Option<String> {
+        let Document::Text(text) = &self.document else {
+            return None;
+        };
+        let line = self.cursor.line;
+        let last = line + count.max(1) - 1;
+        Some(text.copy(Pos::new(line, 0), Pos::new(last, 0), true))
     }
 
     fn rows(&self) -> usize {
@@ -433,6 +560,58 @@ mod tests {
     fn control_characters_never_reach_the_terminal() {
         let t = Text::new("dos line\r\nan \x1b[31m escape\r\n\x07", Lang::Plain);
         assert_eq!(t.lines, ["dos line", "an \u{241b}[31m escape", "\u{2407}"]);
+    }
+
+    #[test]
+    fn copying_gives_the_text_as_the_file_has_it() {
+        let t = Text::new("fn main() {\r\n\tlet x = 1;\r\n}", Lang::Rust);
+        assert_eq!(t.copy(Pos::new(0, 3), Pos::new(0, 6), false), "main");
+        assert_eq!(
+            t.copy(Pos::new(0, 10), Pos::new(1, 6), false),
+            "{\n\tlet",
+            "the tab, not its spaces; no \\r"
+        );
+        assert_eq!(
+            t.copy(Pos::new(1, 2), Pos::new(1, 2), false),
+            "\t",
+            "a tab partly selected"
+        );
+        assert_eq!(
+            t.copy(Pos::new(1, 5), Pos::new(2, 0), true),
+            "\tlet x = 1;\n}\n",
+            "by line: whole lines, each with its newline"
+        );
+    }
+
+    #[test]
+    fn v_and_shift_v_start_switch_and_leave_visual_mode() {
+        let mut v = text_viewer("one two\nthree", 10);
+        v.go(Pos::new(0, 4));
+        v.visual(false);
+        v.go(Pos::new(0, 1));
+        assert_eq!(v.selected(), Some((Pos::new(0, 1), Pos::new(0, 4), false)));
+        v.visual(true);
+        assert_eq!(v.selected(), Some((Pos::new(0, 1), Pos::new(0, 4), true)));
+        v.other_end();
+        assert_eq!(v.cursor, Pos::new(0, 4));
+        v.visual(true);
+        assert_eq!(v.selection, None);
+    }
+
+    #[test]
+    fn copying_a_selection_ends_visual_mode_at_its_start() {
+        let mut v = text_viewer("one two\nthree", 10);
+        v.go(Pos::new(1, 2));
+        v.visual(false);
+        v.go(Pos::new(0, 4));
+        let (copied, ..) = v.take_selection().unwrap();
+        assert_eq!(copied, "two\nthr");
+        assert_eq!((v.selection, v.cursor), (None, Pos::new(0, 4)));
+        assert_eq!(
+            v.copy_lines(5).unwrap(),
+            "one two\nthree\n",
+            "no further than the end"
+        );
     }
 
     #[test]

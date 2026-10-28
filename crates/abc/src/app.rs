@@ -14,9 +14,11 @@ use crate::layout::Widths;
 use crate::motion::{self, Find, Pos};
 use crate::viewer::{Document, Place, Viewer};
 
-/// Work the app asks for: abcd reads files; highlighting runs off the UI thread.
+/// Work the app asks for: abcd reads files; highlighting runs off the UI
+/// thread; the terminal puts text on the clipboard.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cmd {
+    Copy(String),
     ReadFile {
         worktree: PathBuf,
         path: String,
@@ -209,6 +211,9 @@ impl App {
             _ if self.current_worktree().is_none() => Context::Sidebar,
             Focus::Sidebar => Context::Sidebar,
             Focus::Explorer => Context::Explorer,
+            Focus::Viewer if self.current_viewer().is_some_and(|v| v.selection.is_some()) => {
+                Context::Visual
+            }
             Focus::Viewer => Context::Viewer,
         }
     }
@@ -217,6 +222,8 @@ impl App {
         if event.kind != KeyEventKind::Press {
             return;
         }
+        // A message lasts until the next key, as in Vim.
+        self.status = None;
         if let Some(action) = self.finding.take() {
             let count = self.count.take();
             if let Some(target) = typed_char(event) {
@@ -227,7 +234,7 @@ impl App {
         let context = self.context();
         // Counts are Vim's grammar rather than bindings: a digit starts one,
         // except a leading 0, which is a motion of its own.
-        if context == Context::Viewer && self.pending.is_empty() {
+        if matches!(context, Context::Viewer | Context::Visual) && self.pending.is_empty() {
             match (typed_char(event), self.count) {
                 (Some(c @ '0'..='9'), count) if c != '0' || count.is_some() => {
                     let digit = c as usize - '0' as usize;
@@ -268,7 +275,9 @@ impl App {
     }
 
     fn act(&mut self, action: Action, count: Option<usize>) {
-        if self.context() == Context::Viewer && self.viewer_action(action, count) {
+        if matches!(self.context(), Context::Viewer | Context::Visual)
+            && self.viewer_action(action, count)
+        {
             return;
         }
         match action {
@@ -419,9 +428,35 @@ impl App {
                 }
             }
             JumpBack => viewer.back(),
+            VisualChars => viewer.visual(false),
+            VisualLines => viewer.visual(true),
+            OtherEnd => viewer.other_end(),
+            ExitVisual => viewer.selection = None,
+            Copy => {
+                if let Some((text, from, to, by_line)) = viewer.take_selection() {
+                    let size = if by_line || from.line != to.line {
+                        plural(to.line - from.line + 1, "line")
+                    } else {
+                        plural(to.col - from.col + 1, "character")
+                    };
+                    self.copy(text, size);
+                }
+            }
+            CopyLine => {
+                if let Some(text) = viewer.copy_lines(n) {
+                    let size = plural(text.matches('\n').count(), "line");
+                    self.copy(text, size);
+                }
+            }
             _ => return false,
         }
         true
+    }
+
+    /// Puts `text` on the clipboard and says how much went.
+    fn copy(&mut self, text: String, size: String) {
+        self.outbox.push(Cmd::Copy(text));
+        self.status = Some(Status::new(StatusKind::Ok, format!("copied {size}")));
     }
 
     /// Finishes an `f`, `F`, `t` or `T` with the character typed after it.
@@ -552,6 +587,10 @@ impl App {
 
     /// Makes `path` the current worktree and focuses the explorer.
     pub fn open(&mut self, path: &Path) {
+        // Leaving a viewer ends its visual mode, as leaving a window does in Vim.
+        if let Some(viewer) = self.current.as_ref().and_then(|p| self.viewers.get_mut(p)) {
+            viewer.selection = None;
+        }
         // abcd sends the file list; until it arrives the explorer says it's loading.
         self.listings
             .entry(path.to_path_buf())
@@ -567,6 +606,11 @@ impl App {
         }
         self.focus = Focus::Explorer;
     }
+}
+
+/// "1 line", "3 lines".
+pub fn plural(n: usize, word: &str) -> String {
+    format!("{n} {word}{}", if n == 1 { "" } else { "s" })
 }
 
 /// The character a key types, if it types one: not with ctrl or alt held.
@@ -905,6 +949,52 @@ mod tests {
         press_drawn(&mut app, "4");
         app.handle_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         assert_eq!((app.count, app.focus), (None, Focus::Viewer));
+    }
+
+    #[test]
+    fn visual_mode_selects_and_y_copies_to_the_clipboard() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "w w v e");
+        assert_eq!(app.context(), Context::Visual);
+        press_drawn(&mut app, "y");
+        assert_eq!(app.outbox, [Cmd::Copy("Record".into())]);
+        assert_eq!(app.status.as_ref().unwrap().text, "copied 6 characters");
+        assert_eq!((app.context(), cursor(&app)), (Context::Viewer, (0, 12)));
+        press_drawn(&mut app, "j");
+        assert_eq!(app.status, None, "the message goes with the next key");
+    }
+
+    #[test]
+    fn yy_copies_lines_and_shift_v_selects_them() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        press_drawn(&mut app, "2 y y");
+        assert_eq!(
+            app.outbox,
+            [Cmd::Copy(
+                "export type Record = { gstin: string; legalName: string; state: string }\n\n"
+                    .into()
+            )]
+        );
+        assert_eq!(app.status.as_ref().unwrap().text, "copied 2 lines");
+        app.outbox.clear();
+        app.handle_key(KeyEvent::new(KeyCode::Char('V'), KeyModifiers::SHIFT));
+        press_drawn(&mut app, "j j y");
+        let Some(Cmd::Copy(text)) = app.outbox.pop() else {
+            panic!("nothing copied")
+        };
+        assert_eq!(text.lines().count(), 3);
+        assert_eq!(app.status.as_ref().unwrap().text, "copied 3 lines");
+    }
+
+    #[test]
+    fn esc_leaves_visual_mode_before_the_viewer() {
+        let mut app = viewing("packages/integrations/gst/client.ts");
+        let esc = || KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        press_drawn(&mut app, "v l");
+        app.handle_key(esc());
+        assert_eq!((app.context(), app.focus), (Context::Viewer, Focus::Viewer));
+        app.handle_key(esc());
+        assert_eq!(app.focus, Focus::Explorer);
     }
 
     #[test]

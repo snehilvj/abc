@@ -11,7 +11,7 @@ use super::label::{badge, labelled};
 use crate::highlight::{self, Kind, Lang};
 use crate::icons;
 use crate::theme::Theme;
-use crate::viewer::{Document, Viewer};
+use crate::viewer::{Document, Viewer, width};
 
 pub fn kind_style(kind: Kind, theme: &Theme) -> Style {
     let s = &theme.syntax;
@@ -157,11 +157,38 @@ pub fn draw(buf: &mut Buffer, area: Rect, viewer: Option<&Viewer>, focused: bool
                 } else {
                     buf.set_line(x, y, &line, room as u16);
                 }
+                let chars: Vec<char> = text.lines[index].chars().collect();
+                if let Some((from, to, by_line)) = viewer.selected().filter(|_| focused)
+                    && (from.line..=to.line).contains(&index)
+                {
+                    let start = if by_line || index > from.line {
+                        0
+                    } else {
+                        from.col
+                    };
+                    // An empty line shows one selected cell, as in Vim.
+                    let end = if by_line || index < to.line {
+                        chars.len().max(1)
+                    } else {
+                        to.col + 1
+                    };
+                    let mut cx = 0;
+                    for col in left..end {
+                        let w = chars.get(col).map_or(1, |c| width(&[*c]));
+                        if col >= start {
+                            for dx in cx..(cx + w).min(room) {
+                                buf[(x + dx as u16, y)].set_bg(theme.selection);
+                            }
+                        }
+                        cx += w;
+                        if cx >= room {
+                            break;
+                        }
+                    }
+                }
                 if current {
-                    let chars: Vec<char> = text.lines[index].chars().collect();
-                    let before = crate::viewer::width(
-                        &chars[left.min(cursor.col)..cursor.col.min(chars.len())],
-                    );
+                    let col = cursor.col.min(chars.len());
+                    let before = width(&chars[left.min(col)..col]);
                     if before < room {
                         let cell = &mut buf[(x + before as u16, y)];
                         cell.set_style(Style::new().add_modifier(Modifier::REVERSED));

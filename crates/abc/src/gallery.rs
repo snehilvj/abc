@@ -1,7 +1,7 @@
 //! `abc gallery <screen>`: a screen on fake data, in the real terminal, with no
 //! server. Each screen has named states; `[` and `]` step through them.
 
-use std::io::stdout;
+use std::io::{Write, stdout};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -13,6 +13,7 @@ use ratatui::layout::Rect;
 use ratatui::widgets::Paragraph;
 
 use crate::app::{App, Cmd, Connection, Entry, Focus, Msg, SidebarStyle, Status, StatusKind};
+use crate::clipboard;
 use crate::explorer::{Explorer, Listing};
 use crate::fake;
 use crate::highlight;
@@ -242,6 +243,16 @@ pub fn viewer() -> Vec<Preset> {
     if let Some(viewer) = large.viewers.get_mut(&fake::current()) {
         viewer.go(Pos::new(usize::MAX, 0));
     }
+    // verify.ts with a selection from one place to another.
+    let select = |from: Pos, to: Pos, by_line: bool| {
+        let mut app = open(verify, &[]);
+        if let Some(viewer) = app.viewers.get_mut(&fake::current()) {
+            viewer.go(from);
+            viewer.visual(by_line);
+            viewer.go(to);
+        }
+        app
+    };
     // The cursor near the end of a line longer than the viewer is wide.
     let mut sideways = open("packages/integrations/gst/client.ts", &[]);
     if let Some(viewer) = sideways.viewers.get_mut(&fake::current()) {
@@ -261,6 +272,8 @@ pub fn viewer() -> Vec<Preset> {
         ),
         preset("large", large),
         preset("sideways", sideways),
+        preset("visual", select(Pos::new(3, 4), Pos::new(6, 9), false)),
+        preset("visual-lines", select(Pos::new(3, 0), Pos::new(5, 0), true)),
     ]
 }
 
@@ -270,6 +283,12 @@ fn serve(app: &mut App, tx: &mpsc::Sender<Msg>) {
     while !app.outbox.is_empty() {
         for cmd in std::mem::take(&mut app.outbox) {
             match cmd {
+                Cmd::Copy(text) => {
+                    // The terminal takes it from here; one that can't simply ignores it.
+                    let mut out = stdout();
+                    let _ = out.write_all(clipboard::osc52(&text).as_bytes());
+                    let _ = out.flush();
+                }
                 Cmd::ReadFile { worktree, path } => {
                     let contents = fake::read(&path);
                     app.apply(Msg::FileRead {

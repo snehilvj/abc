@@ -2,6 +2,9 @@
 //!
 //! crokey parses and normalises each key. Sequences ("space r a", "g g") are
 //! matched here: a key that starts a longer binding waits for the next one.
+//! Contexts inherit bindings (a pane the global ones, visual mode the
+//! viewer's), and a binding hides any inherited one it overlaps: in visual
+//! mode `y` copies at once rather than waiting for the viewer's `y y`.
 
 use std::fmt;
 use std::str::FromStr;
@@ -62,6 +65,17 @@ pub enum Action {
     RepeatFind,
     RepeatFindBack,
     JumpBack,
+    /// Visual mode by character, or back to it from by line; again to leave.
+    VisualChars,
+    /// Visual mode by line, or back to it from by character; again to leave.
+    VisualLines,
+    /// Visual mode's other end: the cursor goes there.
+    OtherEnd,
+    ExitVisual,
+    /// Copies the selection to the clipboard.
+    Copy,
+    /// Copies the cursor's line, or a count of lines from it.
+    CopyLine,
 }
 
 impl FromStr for Action {
@@ -118,6 +132,12 @@ impl FromStr for Action {
             "repeat_find" => Self::RepeatFind,
             "repeat_find_back" => Self::RepeatFindBack,
             "jump_back" => Self::JumpBack,
+            "visual_chars" => Self::VisualChars,
+            "visual_lines" => Self::VisualLines,
+            "other_end" => Self::OtherEnd,
+            "exit_visual" => Self::ExitVisual,
+            "copy" => Self::Copy,
+            "copy_line" => Self::CopyLine,
             other => return Err(format!("unknown action {other:?}")),
         })
     }
@@ -130,6 +150,24 @@ pub enum Context {
     Sidebar,
     Explorer,
     Viewer,
+    /// The viewer with a selection.
+    Visual,
+}
+
+impl Context {
+    /// The context this one inherits bindings from.
+    fn parent(self) -> Option<Self> {
+        match self {
+            Self::Global => None,
+            Self::Sidebar | Self::Explorer | Self::Viewer => Some(Self::Global),
+            Self::Visual => Some(Self::Viewer),
+        }
+    }
+}
+
+/// Whether one sequence is the other, or starts it.
+fn overlap(a: &Keys, b: &Keys) -> bool {
+    a.0.starts_with(&b.0) || b.0.starts_with(&a.0)
 }
 
 /// A sequence of normalised keys.
@@ -334,7 +372,13 @@ impl Keymap {
             (Viewer, ";", RepeatFind),
             (Viewer, ",", RepeatFindBack),
             (Viewer, "ctrl-o", JumpBack),
+            (Viewer, "v", VisualChars),
+            (Viewer, "shift-v", VisualLines),
+            (Viewer, "y y", CopyLine),
             (Viewer, "esc", FocusLeft),
+            (Visual, "y", Copy),
+            (Visual, "o", OtherEnd),
+            (Visual, "esc", ExitVisual),
         ];
         let mut map = Self::default();
         for (context, keys, action) in defaults {
@@ -345,12 +389,11 @@ impl Keymap {
     }
 
     /// Binds `keys` in `context`. A sequence that is a prefix of another in
-    /// the same context (or its global layer) is an error: it could never wait
-    /// for the longer one.
+    /// the same context is an error: it could never wait for the longer one.
     pub fn bind(&mut self, context: Context, keys: &str, action: Action) -> Result<(), String> {
         let keys: Keys = keys.parse()?;
-        for (other, _) in self.visible(context) {
-            if other != &keys && (other.0.starts_with(&keys.0) || keys.0.starts_with(&other.0)) {
+        for (c, other, _) in &self.bindings {
+            if *c == context && other != &keys && overlap(other, &keys) {
                 return Err(format!(
                     "{keys} and {other} overlap: one is the start of the other"
                 ));
@@ -367,15 +410,21 @@ impl Keymap {
         Ok(())
     }
 
-    /// Bindings that apply in `context`: its own, then global ones it doesn't override.
-    fn visible(&self, context: Context) -> impl Iterator<Item = (&Keys, &Action)> {
-        let own = move |c: &Context| *c == context;
-        let overridden = move |k: &Keys| self.bindings.iter().any(|(c, ok, _)| own(c) && ok == k);
-        let pane = self.bindings.iter().filter(move |(c, _, _)| own(c));
-        let global = self.bindings.iter().filter(move |(c, k, _)| {
-            context != Context::Global && *c == Context::Global && !overridden(k)
-        });
-        pane.chain(global).map(|(_, k, a)| (k, a))
+    /// Bindings that apply in `context`: its own, then each inherited one
+    /// that no closer binding overlaps.
+    fn visible(&self, context: Context) -> Vec<(&Keys, &Action)> {
+        let mut visible: Vec<(&Keys, &Action)> = Vec::new();
+        let mut layer = Some(context);
+        while let Some(c) = layer {
+            let closer = visible.len();
+            for (_, keys, action) in self.bindings.iter().filter(|(bc, _, _)| *bc == c) {
+                if !visible[..closer].iter().any(|(k, _)| overlap(k, keys)) {
+                    visible.push((keys, action));
+                }
+            }
+            layer = c.parent();
+        }
+        visible
     }
 
     /// Feeds one key. `pending` holds the keys of an unfinished sequence and
@@ -410,6 +459,7 @@ impl Keymap {
     /// The first binding for `action` in `context`, for key bars and help.
     pub fn keys_for(&self, context: Context, action: Action) -> Option<&Keys> {
         self.visible(context)
+            .into_iter()
             .find(|(_, a)| **a == action)
             .map(|(k, _)| k)
     }
@@ -563,6 +613,34 @@ mod tests {
             feed_all(&map, Context::Explorer, &[ch('h')]),
             Feed::Action(Action::FocusLeft)
         );
+    }
+
+    #[test]
+    fn visual_mode_inherits_the_viewer_and_hides_what_it_overlaps() {
+        let map = Keymap::defaults();
+        let esc = press(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(
+            feed_all(&map, Context::Visual, &[ch('w')]),
+            Feed::Action(Action::WordForward)
+        );
+        assert_eq!(
+            feed_all(&map, Context::Visual, &[ch('y')]),
+            Feed::Action(Action::Copy),
+            "no waiting for the viewer's y y"
+        );
+        assert_eq!(
+            feed_all(&map, Context::Visual, &[esc]),
+            Feed::Action(Action::ExitVisual)
+        );
+        assert_eq!(
+            feed_all(&map, Context::Visual, &[ch('q')]),
+            Feed::Action(Action::Quit),
+            "and the global layer under the viewer's"
+        );
+        assert!(matches!(
+            feed_all(&map, Context::Viewer, &[ch('y')]),
+            Feed::Pending(_)
+        ));
     }
 
     #[test]
